@@ -11,7 +11,7 @@ from google import genai
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key = GEMINI_API_KEY)
-MODEL_NAME = "gemini-2.5-flash-native-audio-latest"
+MODEL_NAME = "models/gemini-2.5-flash-latest"
 
 app = Flask(__name__, static_folder="static")
 
