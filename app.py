@@ -10,7 +10,9 @@ import pdfplumber
 from google import genai
 
 
-client = genai.Client(api_key = "AQ.Ab8RN6JcurPdtRmY4_vuJv1y8P-sLgREjPztkjMcLOkB8zy-oQ")
+client = genai.Client(
+    api_key = "AQ.Ab8RN6JcurPdtRmY4_vuJv1y8P-sLgREjPztkjMcLOkB8zy-oQ"
+)
 MODEL_NAME = "models/gemini-2.5-flash-latest"
 
 app = Flask(__name__, static_folder="static")
