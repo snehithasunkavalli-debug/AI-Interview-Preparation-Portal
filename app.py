@@ -13,7 +13,7 @@ from google import genai
 client = genai.Client(
     api_key = "AQ.Ab8RN6JnnhuqLExCh3or5pGXRmljwoxj9Xd2yHxrNZC1cRcGaQ"
 )
-MODEL_NAME = "gemini-2.5-flash-latest"
+MODEL_NAME = "models/gemini-2.5-flash-latest"
 
 app = Flask(__name__, static_folder="static")
 
