@@ -1,4 +1,5 @@
 
+
 import os
 import json
 import traceback
@@ -6,18 +7,11 @@ import traceback
 from flask import Flask, request, jsonify, send_from_directory
 import pdfplumber
 
-import vertexai
-from vertexai.generative_models import GenerativeModel
+from google import genai
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
-LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
-MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-001")
-
-if PROJECT_ID:
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key = GEMINI_API_KEY)
+MODEL_NAME = "gemini-2.5-flash"
 
 app = Flask(__name__, static_folder="static")
 
@@ -67,20 +61,18 @@ CV TEXT:
 
 
 def analyze_cv_with_gemini(cv_text: str) -> dict:
-    if not PROJECT_ID:
-        raise RuntimeError(
-            "GOOGLE_CLOUD_PROJECT is not set. Set it as an env var pointing "
-            "to your GCP project id before calling the model."
-        )
-
-    model = GenerativeModel(MODEL_NAME)
-    response = model.generate_content(
-        build_prompt(cv_text),
-        generation_config={
-            "temperature": 0.3,
-            "response_mime_type": "application/json",
-        },
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=build_prompt(cv_text)
     )
+
+    raw = response.text.strip()
+
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        raw = raw.replace("json\n", "", 1)
+
+    return json.loads(raw)
 
     raw = response.text.strip()
     # Safety net in case the model wraps output in ```json fences anyway
