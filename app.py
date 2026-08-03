@@ -9,8 +9,8 @@ import pdfplumber
 
 from google import genai
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key = GEMINI_API_KEY)
+
+client = genai.Client(api_key = "AQ.Ab8RN6JcurPdtRmY4_vuJv1y8P-sLgREjPztkjMcLOkB8zy-oQ")
 MODEL_NAME = "models/gemini-2.5-flash-latest"
 
 app = Flask(__name__, static_folder="static")
@@ -62,7 +62,7 @@ CV TEXT:
 
 def analyze_cv_with_gemini(cv_text: str) -> dict:
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="models/gemini-2.5-flash-latest",
         contents=build_prompt(cv_text)
     )
 
