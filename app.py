@@ -1,28 +1,3 @@
-"""
-AI Interview Preparation Portal — Week 1: CV Analysis backend
----------------------------------------------------------------
-Flow:
-  1. User uploads a CV (PDF) from the browser (index.html)
-  2. Flask receives the file, extracts raw text with pdfplumber
-  3. The text is sent to Gemini (Vertex AI Generative Model) with a
-     structured prompt asking it to return JSON: skills, experience
-     level, gaps, and likely interview questions
-  4. The JSON is returned to the frontend and rendered
-
-Run locally:
-    pip install -r requirements.txt
-    export GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-    export GOOGLE_CLOUD_LOCATION=us-central1
-    gcloud auth application-default login   # for local dev credentials
-    python app.py
-
-Deploy on Cloud Run:
-    gcloud run deploy cv-analysis-service \
-        --source . \
-        --region us-central1 \
-        --allow-unauthenticated \
-        --set-env-vars GOOGLE_CLOUD_PROJECT=your-gcp-project-id,GOOGLE_CLOUD_LOCATION=us-central1
-"""
 
 import os
 import json
