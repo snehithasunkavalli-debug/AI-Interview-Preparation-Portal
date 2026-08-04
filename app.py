@@ -30,7 +30,7 @@ def get_sample_cv_analysis(cv_text):
     without requiring a paid Google Cloud billing account or API keys.
     """
     return {
-        "candidate_name": "John Doe (Demo Resume)",
+        "candidate_name": "John Doe",
         "experience_level": "Mid-Senior Level",
         "years_of_experience_estimate": 5,
         "top_skills": [
