@@ -1,5 +1,4 @@
-Conversation Log
-app.py is import os
+import os
 import json
 import re
 import uuid
