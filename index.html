@@ -501,7 +501,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: gap;
+    flex-wrap: wrap;
     gap: 16px;
     color: var(--paper);
   }
@@ -816,7 +816,7 @@
     <div class="brand-logo">AI</div>
     <div>
       <span class="brand-title">Dossier</span>
-      <span class="brand-badge">Local PC Storage</span>
+      <span class="brand-badge">Standalone Portal</span>
     </div>
   </div>
   
@@ -869,7 +869,7 @@
     <div class="hero" style="text-align:center;">
       <div class="eyebrow">Personalized AI Interview Workspace</div>
       <h1>Sign In to Dossier</h1>
-      <p class="lede" style="margin: 0 auto;">Your resumes, tailored interview questions, and mock interview transcripts will be securely stored under your private account on this PC.</p>
+      <p class="lede" style="margin: 0 auto;">Your resumes, tailored interview questions, and mock interview transcripts will be securely stored under your private account.</p>
     </div>
 
     <div class="auth-card">
@@ -911,7 +911,7 @@
         Upload a PDF resume. The built-in intelligent engine evaluates your skills, identifies gaps, calculates your readiness score, and prepares tailored technical questions — saved to your private profile.
       </p>
       <div class="storage-chip">
-        💾 Zero Cloud Dependencies · Stored locally in <code>./storage/portal.db</code>
+        💾 Independent App · Stored in SQLite <code>./storage/portal.db</code>
       </div>
     </div>
 
@@ -1298,7 +1298,7 @@ analyzeBtn.addEventListener('click', async () => {
   } catch (err) {
     loadingSpinner.classList.remove('show');
     analyzeBtn.disabled = false;
-    showError('Could not reach backend service. Make sure python app.py is running.');
+    showError('Could not reach backend service. Make sure backend app is running.');
   }
 });
 
