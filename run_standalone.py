@@ -17,7 +17,7 @@ if __name__ == "__main__":
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
     print("======================================================")
-    print(f"🚀 AI Interview Preparation Portal (Standalone)")
+    print(f"[*] AI Interview Preparation Portal (Standalone)")
     print(f"[*] Access the app at: {url}")
     print(f"[*] Running directly on your computer (No IDE needed)")
     print("======================================================")
@@ -32,3 +32,4 @@ if __name__ == "__main__":
         from app import app
         print(f"[*] Running with Flask Server on port {port}...")
         app.run(host="0.0.0.0", port=port, debug=False)
+
