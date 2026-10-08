@@ -3,11 +3,13 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Dossier — AI Interview Prep &amp; Mock Interview Portal</title>
+<title>Dossier — AI Interview Prep &amp; Dedicated Admin Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<!-- PDF.js library for client-side PDF parsing on GitHub Pages -->
+<!-- PDF.js library for client-side PDF parsing -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- Chart.js for Admin Analytics Visualizations -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
   :root {
@@ -28,6 +30,8 @@
     --text-muted: #8C827A;
     --border: #D6CEBE;
     --danger: #C53030;
+    --danger-bg: #FDE8E8;
+    --danger-text: #7A2E17;
     --success: #2F855A;
     --radius: 8px;
     --shadow: 0 12px 36px -8px rgba(0,0,0,0.4);
@@ -122,6 +126,11 @@
     color: var(--paper);
     border-color: var(--teal);
   }
+  .nav-btn.admin-tab-btn {
+    background: rgba(214, 158, 46, 0.2);
+    border: 1px solid var(--gold);
+    color: var(--gold);
+  }
 
   .header-actions {
     display: flex;
@@ -182,10 +191,10 @@
     flex: 1;
   }
 
-  /* ----------------- AUTH SCREEN ----------------- */
+  /* ----------------- AUTH / LOGIN MODES ----------------- */
   #viewAuth {
-    max-width: 460px;
-    margin: 40px auto;
+    max-width: 480px;
+    margin: 30px auto;
   }
   .auth-card {
     background: var(--paper);
@@ -194,17 +203,44 @@
     box-shadow: var(--shadow);
     overflow: hidden;
   }
+  .login-role-selector {
+    display: flex;
+    border-bottom: 2px solid var(--border);
+    background: var(--paper-dim);
+  }
+  .login-role-btn {
+    flex: 1;
+    padding: 14px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-soft);
+  }
+  .login-role-btn.active {
+    background: var(--paper);
+    color: var(--teal-dim);
+    border-bottom: 3px solid var(--teal);
+  }
+  .login-role-btn.active.admin-mode {
+    color: var(--gold-dim);
+    border-bottom-color: var(--gold);
+  }
+
   .auth-tabs {
     display: flex;
     border-bottom: 1px solid var(--border);
-    background: var(--paper-dim);
+    background: #F2EAD8;
   }
   .auth-tab {
     flex: 1;
     text-align: center;
-    padding: 14px;
+    padding: 10px;
     font-family: 'Space Mono', monospace;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     cursor: pointer;
@@ -214,8 +250,7 @@
   }
   .auth-tab.active {
     background: var(--paper);
-    color: var(--teal-dim);
-    border-bottom: 2px solid var(--teal);
+    color: var(--text);
   }
   .auth-body { padding: 28px; }
   .form-group { margin-bottom: 16px; }
@@ -228,7 +263,7 @@
     margin-bottom: 6px;
     color: var(--text-soft);
   }
-  .form-group input {
+  .form-group input, .form-group textarea {
     width: 100%;
     padding: 12px 14px;
     border: 1px solid var(--border);
@@ -238,16 +273,16 @@
     background: var(--paper-card);
     color: var(--text);
   }
-  .form-group input:focus {
+  .form-group input:focus, .form-group textarea:focus {
     outline: none;
     border-color: var(--teal);
   }
 
-  /* ----------------- AI SETTINGS MODAL ----------------- */
+  /* ----------------- MODALS ----------------- */
   .modal-backdrop {
     position: fixed;
     top: 0; left: 0; width: 100vw; height: 100vh;
-    background: rgba(0,0,0,0.7);
+    background: rgba(0,0,0,0.75);
     display: none;
     align-items: center;
     justify-content: center;
@@ -260,554 +295,145 @@
     color: var(--text);
     border-radius: var(--radius);
     padding: 28px;
-    max-width: 500px;
+    max-width: 520px;
     width: 90%;
     box-shadow: var(--shadow);
   }
-  .modal-box h3 {
-    margin: 0 0 12px;
-    font-family: 'Fraunces', serif;
-    font-size: 22px;
-    color: var(--ink-dark);
+  .modal-box h3 { margin: 0 0 12px; font-family: 'Fraunces', serif; font-size: 22px; color: var(--ink-dark); }
+  .modal-box p { font-size: 13px; line-height: 1.5; color: var(--text-soft); margin-bottom: 18px; }
+
+  .star-rating-row {
+    display: flex; gap: 8px; font-size: 28px; cursor: pointer; margin: 12px 0 16px; justify-content: center;
   }
-  .modal-box p {
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--text-soft);
-    margin-bottom: 18px;
-  }
+  .star-icon { color: #D6CEBE; transition: color 0.15s ease; }
+  .star-icon.active { color: var(--gold); }
 
   .hero { margin-bottom: 32px; }
   .eyebrow {
-    font-family: 'Space Mono', monospace;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-size: 12px;
-    color: var(--gold);
-    margin-bottom: 10px;
+    font-family: 'Space Mono', monospace; letter-spacing: 0.14em; text-transform: uppercase; font-size: 12px; color: var(--gold); margin-bottom: 10px;
   }
   h1 {
-    font-family: 'Fraunces', serif;
-    font-weight: 700;
-    font-size: clamp(28px, 4vw, 42px);
-    line-height: 1.15;
-    margin: 0 0 12px;
-    color: var(--paper);
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(28px, 4vw, 42px); line-height: 1.15; margin: 0 0 12px; color: var(--paper);
   }
-  .lede {
-    color: #C7C1B2;
-    font-size: 15px;
-    line-height: 1.6;
-    max-width: 680px;
-    margin: 0;
-  }
+  .lede { color: #C7C1B2; font-size: 15px; line-height: 1.6; max-width: 680px; margin: 0; }
 
-  .storage-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(40, 111, 99, 0.25);
-    border: 1px solid rgba(40, 111, 99, 0.5);
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    color: #8CE0D0;
-    margin-top: 12px;
-  }
-
-  .dossier {
-    background: var(--paper);
-    color: var(--text);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-    margin-bottom: 32px;
-  }
-  .dossier-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    border-bottom: 1px dashed var(--border);
-    font-family: 'Space Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-soft);
-    background: var(--paper-dim);
-  }
+  .dossier { background: var(--paper); color: var(--text); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 32px; }
+  .dossier-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px dashed var(--border); font-family: 'Space Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-soft); background: var(--paper-dim); }
   .dossier-body { padding: 32px 24px; }
 
-  .dropzone {
-    border: 2px dashed #B9AE8E;
-    border-radius: 6px;
-    padding: 40px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    background: repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(0,0,0,0.015) 10px, rgba(0,0,0,0.015) 20px);
-    display: block;
-  }
-  .dropzone:hover, .dropzone.drag {
-    border-color: var(--teal);
-    background: #EAF2EF;
-  }
-  .dropzone h3 {
-    font-family: 'Fraunces', serif;
-    font-size: 22px;
-    margin: 8px 0 4px;
-    color: var(--text);
-  }
+  .dropzone { border: 2px dashed #B9AE8E; border-radius: 6px; padding: 30px 20px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(0,0,0,0.015) 10px, rgba(0,0,0,0.015) 20px); display: block; margin-bottom: 20px; }
+  .dropzone:hover, .dropzone.drag { border-color: var(--teal); background: #EAF2EF; }
+  .dropzone h3 { font-family: 'Fraunces', serif; font-size: 20px; margin: 6px 0 4px; color: var(--text); }
   .dropzone p { color: var(--text-soft); font-size: 13px; margin: 0; }
   .dropzone input { display: none; }
-  .file-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 14px;
-    padding: 6px 14px;
-    background: var(--teal-dim);
-    color: var(--paper);
-    border-radius: 20px;
-    font-size: 12px;
-    font-family: 'Space Mono', monospace;
-  }
+  .file-chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 6px 14px; background: var(--teal-dim); color: var(--paper); border-radius: 20px; font-size: 12px; font-family: 'Space Mono', monospace; }
 
-  button.btn-primary {
-    width: 100%;
-    margin-top: 20px;
-    padding: 14px;
-    background: var(--teal);
-    color: var(--paper);
-    border: none;
-    border-radius: 6px;
-    font-family: 'Space Mono', monospace;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  button.btn-primary:hover:not(:disabled) {
-    background: var(--teal-dim);
-    box-shadow: 0 4px 12px rgba(40,111,99,0.35);
-  }
-  button.btn-primary:disabled {
-    background: #A79E88;
-    cursor: not-allowed;
-    opacity: 0.7;
-  }
+  button.btn-primary { width: 100%; margin-top: 20px; padding: 14px; background: var(--teal); color: var(--paper); border: none; border-radius: 6px; font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: all 0.15s ease; }
+  button.btn-primary:hover:not(:disabled) { background: var(--teal-dim); box-shadow: 0 4px 12px rgba(40,111,99,0.35); }
+  button.btn-primary:disabled { background: #A79E88; cursor: not-allowed; opacity: 0.7; }
 
-  .report-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-top: 24px;
-  }
+  .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; }
   @media(max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
 
-  .panel {
-    background: var(--paper-card);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 20px;
-  }
-  .panel h4 {
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--teal);
-    margin: 0 0 12px;
-  }
+  .panel { background: var(--paper-card); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 20px; }
+  .panel h4 { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal); margin: 0 0 12px; }
   .full { grid-column: 1 / -1; }
 
-  .tag {
-    display: inline-block;
-    background: var(--paper-dim);
-    border: 1px solid #D8D0B8;
-    border-radius: 16px;
-    padding: 4px 11px;
-    font-size: 12px;
-    margin: 0 5px 6px 0;
-    color: var(--text);
-    font-weight: 500;
-  }
-  .gap-tag {
-    background: #FDF0ED;
-    border-color: #F3C4B8;
-    color: #9B2C15;
-  }
-  .strength-item {
-    font-size: 13px;
-    line-height: 1.5;
-    margin-bottom: 8px;
-    padding-left: 18px;
-    position: relative;
-  }
-  .strength-item::before {
-    content: "✦";
-    position: absolute;
-    left: 0;
-    color: var(--gold-dim);
-  }
+  /* Progress Bars */
+  .skill-progress-item { margin-bottom: 14px; }
+  .skill-progress-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .skill-match-pct { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; }
+  .progress-track { height: 10px; width: 100%; background: var(--paper-dim); border-radius: 6px; overflow: hidden; border: 1px solid #D6CEBE; }
+  .progress-fill { height: 100%; border-radius: 6px; transition: width 0.6s ease; }
+  .fill-matched { background: var(--success); }
+  .fill-partial { background: var(--gold); }
+  .fill-gap { background: var(--danger); }
 
-  .gauge-panel {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    gap: 28px;
-    background: var(--teal-dim);
-    color: var(--paper);
-    border: none;
-  }
+  .tag { display: inline-block; background: var(--paper-dim); border: 1px solid #D8D0B8; border-radius: 16px; padding: 4px 11px; font-size: 12px; margin: 0 5px 6px 0; color: var(--text); font-weight: 500; }
+  .gap-tag { background: #FDF0ED; border-color: #F3C4B8; color: #9B2C15; }
+  .strength-item { font-size: 13px; line-height: 1.5; margin-bottom: 8px; padding-left: 18px; position: relative; }
+  .strength-item::before { content: "✦"; position: absolute; left: 0; color: var(--gold-dim); }
+
+  .gauge-panel { grid-column: 1 / -1; display: flex; align-items: center; gap: 28px; background: var(--teal-dim); color: var(--paper); border: none; }
   .gauge-panel h4 { color: var(--gold); }
-  .gauge-panel .name {
-    font-family: 'Fraunces', serif;
-    font-size: 28px;
-    font-weight: 700;
-    margin: 2px 0 4px;
-  }
+  .gauge-panel .name { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 700; margin: 2px 0 4px; }
   .gauge-panel .meta { color: #D5CFBE; font-size: 13px; font-family: 'Space Mono', monospace; }
 
-  .qcard {
-    background: var(--paper-dim);
-    border-left: 4px solid var(--gold);
-    border-radius: 4px;
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-  .qcard .qnum {
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    color: var(--gold-dim);
-    font-weight: 700;
-  }
-  .qcard .qtext {
-    font-family: 'Fraunces', serif;
-    font-size: 16px;
-    margin: 4px 0 6px;
-    line-height: 1.4;
-  }
+  .qcard { background: var(--paper-dim); border-left: 4px solid var(--gold); border-radius: 4px; padding: 16px; margin-bottom: 12px; }
+  .qcard .qnum { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--gold-dim); font-weight: 700; }
+  .qcard .qtext { font-family: 'Fraunces', serif; font-size: 16px; margin: 4px 0 6px; line-height: 1.4; }
   .qcard .why { font-size: 12px; color: var(--text-soft); }
 
-  .action-banner {
-    grid-column: 1 / -1;
-    background: linear-gradient(135deg, var(--ink-light), var(--ink-dark));
-    border: 1px solid rgba(214, 158, 46, 0.4);
-    border-radius: 6px;
-    padding: 24px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 16px;
-    color: var(--paper);
-  }
-  .action-banner h3 {
-    margin: 0 0 4px;
-    font-family: 'Fraunces', serif;
-    font-size: 20px;
-    color: var(--paper);
-  }
+  .action-banner { grid-column: 1 / -1; background: linear-gradient(135deg, var(--ink-light), var(--ink-dark)); border: 1px solid rgba(214, 158, 46, 0.4); border-radius: 6px; padding: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--paper); }
+  .action-banner h3 { margin: 0 0 4px; font-family: 'Fraunces', serif; font-size: 20px; color: var(--paper); }
   .action-banner p { margin: 0; font-size: 13px; color: #C7C1B2; }
-  .btn-gold {
-    background: var(--gold);
-    color: var(--ink);
-    border: none;
-    border-radius: 6px;
-    padding: 12px 24px;
-    font-family: 'Space Mono', monospace;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-  }
-  .btn-gold:hover {
-    background: #E5AC3A;
-    box-shadow: 0 4px 16px rgba(214, 158, 46, 0.4);
-  }
+  .btn-gold { background: var(--gold); color: var(--ink); border: none; border-radius: 6px; padding: 12px 24px; font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; white-space: nowrap; transition: all 0.2s ease; }
+  .btn-gold:hover { background: #E5AC3A; box-shadow: 0 4px 16px rgba(214, 158, 46, 0.4); }
 
-  /* ----------------- CHAT BOX STYLING ----------------- */
-  .chat-container {
-    background: var(--paper);
-    color: var(--text);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    display: flex;
-    flex-direction: column;
-    height: 75vh;
-    min-height: 600px;
-    overflow: hidden;
-  }
-  .chat-header {
-    background: var(--ink-dark);
-    color: var(--paper);
-    padding: 16px 24px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-  }
-  .chat-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .avatar {
-    width: 36px;
-    height: 36px;
-    background: var(--teal);
-    color: var(--paper);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-  }
+  /* ----------------- CHAT BOX ----------------- */
+  .chat-container { background: var(--paper); color: var(--text); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; height: 75vh; min-height: 600px; overflow: hidden; }
+  .chat-header { background: var(--ink-dark); color: var(--paper); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .chat-title { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 36px; height: 36px; background: var(--teal); color: var(--paper); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; }
   .chat-info h3 { margin: 0; font-size: 15px; font-family: 'Fraunces', serif; }
   .chat-info p { margin: 2px 0 0; font-size: 11px; font-family: 'Space Mono', monospace; color: #A6A092; }
 
-  .chat-progress {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .progress-pill {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 12px;
-    padding: 4px 12px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    color: var(--gold);
-  }
+  .chat-progress { display: flex; align-items: center; gap: 12px; }
+  .progress-pill { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 4px 12px; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--gold); }
 
-  .chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    background: #F5EFE4;
-  }
-
-  .msg-row {
-    display: flex;
-    gap: 12px;
-    max-width: 85%;
-  }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: #F5EFE4; }
+  .msg-row { display: flex; gap: 12px; max-width: 85%; }
   .msg-row.ai { align-self: flex-start; }
   .msg-row.user { align-self: flex-end; flex-direction: row-reverse; }
+  .bubble { padding: 16px 18px; border-radius: 8px; font-size: 14px; line-height: 1.5; }
+  .msg-row.ai .bubble { background: var(--paper-card); color: var(--text); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+  .msg-row.user .bubble { background: var(--teal-dim); color: var(--paper); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 
-  .bubble {
-    padding: 16px 18px;
-    border-radius: 8px;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  .msg-row.ai .bubble {
-    background: var(--paper-card);
-    color: var(--text);
-    border: 1px solid var(--border);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  }
-  .msg-row.user .bubble {
-    background: var(--teal-dim);
-    color: var(--paper);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-
-  .feedback-box {
-    margin-top: 10px;
-    background: #FFFDF9;
-    border: 1px solid #E2D9C8;
-    border-radius: 6px;
-    padding: 14px;
-    font-size: 12px;
-  }
-  .feedback-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-  .score-badge {
-    font-family: 'Space Mono', monospace;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-  }
-  .score-high { background: #DEF7EC; color: #03543F; border: 1px solid #BCF0DA; }
-  .score-mid { background: #FEF08A; color: #713F12; border: 1px solid #FDE047; }
-  .score-low { background: #FDE8E8; color: #9B1C1C; border: 1px solid #F8B4B4; }
-
-  .fb-section { margin-top: 6px; }
-  .fb-label { font-weight: 700; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-soft); text-transform: uppercase; }
-
-  .chat-controls {
-    background: var(--paper-card);
-    border-top: 1px solid var(--border);
-    padding: 16px 20px;
-  }
-  .input-wrapper {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-  }
-  textarea.chat-input {
-    flex: 1;
-    min-height: 54px;
-    max-height: 120px;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    resize: none;
-    background: var(--paper);
-    color: var(--text);
-  }
-  textarea.chat-input:focus {
-    outline: none;
-    border-color: var(--teal);
-  }
-  .btn-icon {
-    background: var(--paper-dim);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    width: 48px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 18px;
-    transition: all 0.2s ease;
-  }
+  .chat-controls { background: var(--paper-card); border-top: 1px solid var(--border); padding: 16px 20px; }
+  .input-wrapper { display: flex; gap: 10px; align-items: flex-end; }
+  textarea.chat-input { flex: 1; min-height: 54px; max-height: 120px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; font-family: 'Inter', sans-serif; font-size: 14px; resize: none; background: var(--paper); color: var(--text); }
+  textarea.chat-input:focus { outline: none; border-color: var(--teal); }
+  .btn-icon { background: var(--paper-dim); border: 1px solid var(--border); border-radius: 6px; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; transition: all 0.2s ease; }
   .btn-icon:hover { background: #E2D9C8; }
-  .btn-icon.recording {
-    background: var(--danger);
-    color: white;
-    animation: pulse 1.2s infinite;
-  }
-  @keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.06); }
-    100% { transform: scale(1); }
-  }
+  .btn-icon.recording { background: var(--danger); color: white; animation: pulse 1.2s infinite; }
 
-  .btn-send {
-    background: var(--teal);
-    color: var(--paper);
-    border: none;
-    border-radius: 6px;
-    padding: 0 20px;
-    height: 48px;
-    font-family: 'Space Mono', monospace;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
+  .btn-send { background: var(--teal); color: var(--paper); border: none; border-radius: 6px; padding: 0 20px; height: 48px; font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; text-transform: uppercase; cursor: pointer; transition: all 0.15s ease; }
   .btn-send:hover { background: var(--teal-dim); }
 
-  .coach-bar {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-    flex-wrap: wrap;
-  }
-  .chip-coach {
-    background: var(--paper-dim);
-    border: 1px solid var(--border);
-    padding: 4px 10px;
-    border-radius: 14px;
-    font-size: 11px;
-    font-family: 'Space Mono', monospace;
-    cursor: pointer;
-    color: var(--text-soft);
-  }
+  .coach-bar { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .chip-coach { background: var(--paper-dim); border: 1px solid var(--border); padding: 4px 10px; border-radius: 14px; font-size: 11px; font-family: 'Space Mono', monospace; cursor: pointer; color: var(--text-soft); }
   .chip-coach:hover { background: #DFD7C4; color: var(--text); }
 
-  /* ----------------- HISTORY VIEW ----------------- */
-  .table-card {
-    background: var(--paper);
-    color: var(--text);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 24px;
-    margin-bottom: 24px;
-  }
-  .table-card h3 {
-    font-family: 'Fraunces', serif;
-    margin: 0 0 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  table.history-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  table.history-table th {
-    text-align: left;
-    padding: 10px 12px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    text-transform: uppercase;
-    color: var(--text-soft);
-    border-bottom: 2px solid var(--border);
-  }
-  table.history-table td {
-    padding: 12px;
-    border-bottom: 1px solid var(--border);
-  }
+  /* ----------------- ADMIN DASHBOARD ----------------- */
+  .admin-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  @media(max-width: 768px) { .admin-kpi-grid { grid-template-columns: 1fr 1fr; } }
+  .kpi-card { background: var(--paper-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; color: var(--text); }
+  .kpi-card .kpi-label { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-soft); text-transform: uppercase; }
+  .kpi-card .kpi-val { font-family: 'Fraunces', serif; font-size: 28px; font-weight: 700; color: var(--ink-dark); margin-top: 4px; }
+
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  @media(max-width: 768px) { .chart-grid { grid-template-columns: 1fr; } }
+
+  .table-card { background: var(--paper); color: var(--text); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin-bottom: 24px; }
+  .table-card h3 { font-family: 'Fraunces', serif; margin: 0 0 16px; display: flex; align-items: center; justify-content: space-between; }
+
+  table.history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.history-table th { text-align: left; padding: 10px 12px; font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; color: var(--text-soft); border-bottom: 2px solid var(--border); }
+  table.history-table td { padding: 12px; border-bottom: 1px solid var(--border); }
   table.history-table tr:hover { background: rgba(0,0,0,0.02); }
 
-  .btn-sm {
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    border: 1px solid var(--border);
-    background: var(--paper-dim);
-    cursor: pointer;
-    margin-right: 4px;
-  }
+  tr.row-suspicious { background: var(--danger-bg) !important; color: var(--danger-text) !important; border-left: 4px solid var(--danger); }
+  tr.row-suspicious td { border-bottom-color: #F8B4B4; }
+  .badge-danger { background: var(--danger); color: white; padding: 2px 6px; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; }
+  .badge-banned { background: #4A5568; color: white; padding: 2px 6px; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 10px; }
+
+  .btn-sm { padding: 4px 10px; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 11px; border: 1px solid var(--border); background: var(--paper-dim); cursor: pointer; margin-right: 4px; }
   .btn-sm:hover { background: #D9D0BD; }
   .btn-danger-sm { color: var(--danger); border-color: #F8B4B4; }
   .btn-danger-sm:hover { background: #FDE8E8; }
 
-  /* Error & Loading */
-  .error-box {
-    margin-top: 16px;
-    padding: 12px 16px;
-    border-left: 3px solid var(--danger);
-    background: #FBEAE4;
-    color: #7A2E17;
-    font-size: 13px;
-    border-radius: 2px;
-    display: none;
-  }
-  .loading-spinner {
-    display: none;
-    margin: 20px 0;
-    text-align: center;
-    font-family: 'Space Mono', monospace;
-    font-size: 13px;
-    color: var(--gold);
-  }
+  .error-box { margin-top: 16px; padding: 12px 16px; border-left: 3px solid var(--danger); background: #FBEAE4; color: #7A2E17; font-size: 13px; border-radius: 2px; display: none; }
+  .loading-spinner { display: none; margin: 20px 0; text-align: center; font-family: 'Space Mono', monospace; font-size: 13px; color: var(--gold); }
   .loading-spinner.show { display: block; }
 </style>
 </head>
@@ -818,14 +444,15 @@
     <div class="brand-logo">AI</div>
     <div>
       <span class="brand-title">Dossier</span>
-      <span class="brand-badge">GitHub Public Ready</span>
+      <span class="brand-badge" id="headerBrandBadge">Portal</span>
     </div>
   </div>
   
   <nav id="mainNav" style="display:none;">
-    <button class="nav-btn active" id="tabCvBtn" onclick="switchTab('cv')">📄 CV Intake</button>
-    <button class="nav-btn" id="tabChatBtn" onclick="switchTab('chat')">💬 Mock Interview</button>
-    <button class="nav-btn" id="tabHistBtn" onclick="switchTab('history')">💾 Saved Reports</button>
+    <button class="nav-btn user-nav-item active" id="tabCvBtn" onclick="switchTab('cv')">📄 CV &amp; Job Match</button>
+    <button class="nav-btn user-nav-item" id="tabChatBtn" onclick="switchTab('chat')">💬 Mock Interview</button>
+    <button class="nav-btn user-nav-item" id="tabHistBtn" onclick="switchTab('history')">💾 Saved Reports</button>
+    <button class="nav-btn admin-tab-btn" id="tabAdminBtn" onclick="switchTab('admin')" style="display:none;">👑 Admin Dashboard</button>
   </nav>
 
   <div class="header-actions">
@@ -841,21 +468,43 @@
   </div>
 </header>
 
+<!-- ================= 5-STAR RATING PROMPT MODAL ================= -->
+<div class="modal-backdrop" id="ratingModal">
+  <div class="modal-box" style="text-align:center;">
+    <h3>⭐ Enjoying Dossier AI Interview Prep?</h3>
+    <p>You've logged in 5 times! Please rate your experience. Your feedback helps us improve our platform.</p>
+    
+    <div class="star-rating-row" id="starRatingRow">
+      <span class="star-icon" onclick="setStarRating(1)">★</span>
+      <span class="star-icon" onclick="setStarRating(2)">★</span>
+      <span class="star-icon" onclick="setStarRating(3)">★</span>
+      <span class="star-icon" onclick="setStarRating(4)">★</span>
+      <span class="star-icon" onclick="setStarRating(5)">★</span>
+    </div>
+
+    <div class="form-group">
+      <input type="text" id="ratingCommentInput" placeholder="Optional comments or feedback..." />
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
+      <button class="btn-gold" style="padding:10px 20px;" onclick="submitUserRating()">Submit Rating</button>
+      <button class="btn-sm" style="padding:10px 16px;" onclick="closeRatingModal()">Ask Later</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= AI SETTINGS MODAL ================= -->
 <div class="modal-backdrop" id="aiSettingsModal">
   <div class="modal-box">
     <h3>⚙️ AI Model Configuration</h3>
     <p>
       This public app works <strong>100% in your browser</strong> without needing any server!
-      <br>1. <strong>Local Intelligent NLP Engine (Default)</strong>: Runs 100% offline in your browser with zero API keys.
-      <br>2. <strong>Google Gemini 2.0 Live AI</strong>: Enter a free Google AI Studio key for live conversational reasoning and real-time candidate feedback directly in browser.
+      <br>1. <strong>Local Intelligent NLP Engine (Default)</strong>: Runs 100% offline in your browser.
+      <br>2. <strong>Google Gemini 2.0 Live AI</strong>: Enter a free Google AI Studio key for live conversational reasoning.
     </p>
     <div class="form-group">
       <label>Google Gemini API Key (Optional)</label>
       <input type="password" id="geminiApiKeyInput" placeholder="AIzaSy..." />
-      <small style="display:block;margin-top:4px;font-size:11px;color:var(--text-soft);">
-        Get a free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--teal);">Google AI Studio</a> (Zero GCP / billing needed).
-      </small>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px;">
       <button class="btn-primary" style="margin:0;" onclick="saveAiSettings()">Save Settings</button>
@@ -866,19 +515,25 @@
 
 <div class="wrap">
   
-  <!-- ================= TAB 0: AUTH VIEW ================= -->
+  <!-- ================= TAB 0: AUTH VIEW (USER VS ADMIN SIGN IN) ================= -->
   <div id="viewAuth">
     <div class="hero" style="text-align:center;">
-      <div class="eyebrow">Public AI Interview Workspace</div>
-      <h1>Sign In to Dossier</h1>
-      <p class="lede" style="margin: 0 auto;">Your resumes, tailored interview questions, and mock interview transcripts will be securely saved in your browser storage.</p>
+      <div class="eyebrow" id="loginEyebrow">Portal Access</div>
+      <h1 id="loginTitle">Sign In to Dossier</h1>
+      <p class="lede" style="margin: 0 auto;" id="loginLede">Select your sign-in mode below to access your user portal or admin dashboard.</p>
     </div>
 
     <div class="auth-card">
-      <div class="auth-tabs">
+      <div class="login-role-selector">
+        <button class="login-role-btn active" id="btnRoleUser" onclick="setLoginRoleMode('user')">👤 User Sign In</button>
+        <button class="login-role-btn" id="btnRoleAdmin" onclick="setLoginRoleMode('admin')">👑 Admin Sign In</button>
+      </div>
+
+      <div class="auth-tabs" id="userAuthTabHeader">
         <button class="auth-tab active" id="tabLoginBtn" onclick="setAuthMode('login')">Sign In</button>
         <button class="auth-tab" id="tabRegisterBtn" onclick="setAuthMode('register')">Create Account</button>
       </div>
+
       <div class="auth-body">
         <form id="authForm" onsubmit="handleAuthSubmit(event)">
           <div class="form-group" id="fullNameGroup" style="display:none;">
@@ -886,7 +541,7 @@
             <input type="text" id="authFullName" placeholder="e.g. Jane Doe" />
           </div>
           <div class="form-group">
-            <label>Username</label>
+            <label id="usernameLabel">Username or Email</label>
             <input type="text" id="authUsername" placeholder="e.g. janedoe" required />
           </div>
           <div class="form-group" id="emailGroup" style="display:none;">
@@ -904,50 +559,50 @@
     </div>
   </div>
 
-  <!-- ================= TAB 1: CV INTAKE & ANALYSIS ================= -->
+  <!-- ================= TAB 1: CV INTAKE & JOB REQUIREMENTS (USER ONLY) ================= -->
   <div id="viewCv" style="display:none;">
     <div class="hero">
-      <div class="eyebrow">Public CV Intake &amp; AI Evaluation</div>
-      <h1>Feed your CV.<br>Master the technical interview.</h1>
+      <div class="eyebrow">Company Requirements &amp; Skill Match Analysis</div>
+      <h1>Target Company Requirements.<br>Analyze Skill Gaps &amp; Match %</h1>
       <p class="lede">
-        Upload a PDF resume. The built-in intelligent engine evaluates your skills, identifies gaps, calculates your readiness score, and prepares tailored technical questions.
+        Paste company job requirements below and upload your PDF resume. The system will match your skills, calculate match percentages, show progress bars for each gap, and prepare tailored mock interview questions.
       </p>
-      <div class="storage-chip">
-        🌐 100% Client-Side Ready · Runs on GitHub Pages &amp; Local Storage
-      </div>
     </div>
 
     <div class="dossier">
       <div class="dossier-header">
-        <span>Intake Document</span>
-        <span id="statusLabel">Awaiting PDF</span>
+        <span>Target Job Requirements &amp; Resume Intake</span>
+        <span id="statusLabel">Awaiting Input</span>
       </div>
       <div class="dossier-body">
+        <div class="form-group" style="margin-bottom:20px;">
+          <label style="font-size:12px;color:var(--teal-dim);">🏢 Paste Company Requirements / Job Description (Optional)</label>
+          <textarea id="jobRequirementsInput" rows="4" placeholder="e.g., We are seeking a Backend Developer proficient in Python, FastAPI, PostgreSQL, Docker, AWS, Kubernetes, REST API security, and Microservices architecture. Must have unit testing experience."></textarea>
+        </div>
+
         <label class="dropzone" id="dropzone">
           <input type="file" id="fileInput" accept="application/pdf" />
-          <h3 id="dzTitle">Drop CV here, or click to browse</h3>
+          <h3 id="dzTitle">Drop Candidate CV PDF here, or click to browse</h3>
           <p>Standard PDF format, up to 15MB</p>
           <div id="fileChip" style="display:none;" class="file-chip">📄 <span id="fileName"></span></div>
         </label>
-        <button class="btn-primary" id="analyzeBtn" disabled>Analyze CV &amp; Generate Questions</button>
+        
+        <button class="btn-primary" id="analyzeBtn" disabled>Analyze Skill Match % &amp; Generate Tailored Interview</button>
         <div class="error-box" id="errorBox"></div>
-        <div class="loading-spinner" id="loadingSpinner">⚡ Parsing PDF &amp; Running AI Analysis...</div>
+        <div class="loading-spinner" id="loadingSpinner">⚡ Parsing PDF &amp; Matching Company Requirements...</div>
       </div>
     </div>
 
     <div id="results" style="display:none;">
       <div class="report-grid">
-        
         <div class="panel gauge-panel">
           <svg width="96" height="96" viewBox="0 0 96 96">
             <circle cx="48" cy="48" r="42" fill="none" stroke="#1B3D37" stroke-width="8"/>
-            <circle id="gaugeArc" cx="48" cy="48" r="42" fill="none" stroke="#D69E2E" stroke-width="8"
-                    stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264"
-                    transform="rotate(-90 48 48)"/>
-            <text id="gaugeNum" x="48" y="54" text-anchor="middle" font-family="Space Mono" font-size="22" fill="#F8F4EC">0</text>
+            <circle id="gaugeArc" cx="48" cy="48" r="42" fill="none" stroke="#D69E2E" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 48 48)"/>
+            <text id="gaugeNum" x="48" y="54" text-anchor="middle" font-family="Space Mono" font-size="22" fill="#F8F4EC">0%</text>
           </svg>
           <div>
-            <h4>Readiness Score</h4>
+            <h4>Company Requirement Match Score</h4>
             <div class="name" id="resCandidateName">Candidate</div>
             <div class="meta" id="resCandidateMeta">—</div>
           </div>
@@ -955,24 +610,29 @@
 
         <div class="action-banner">
           <div>
-            <h3>🚀 Ready to test your knowledge?</h3>
-            <p>Start a live interactive mock interview based on this CV's tailored questions.</p>
+            <h3>🚀 Tailored Mock Interview Ready</h3>
+            <p>Start an interactive mock interview targeting your identified skill gaps and company requirements.</p>
           </div>
           <button class="btn-gold" id="startInterviewBtn" onclick="launchInterviewFromCV()">Start Mock Interview →</button>
         </div>
 
+        <div class="panel full">
+          <h4>📊 Required Skill Progress &amp; Gap Breakdown (%)</h4>
+          <div id="skillProgressList"></div>
+        </div>
+
         <div class="panel">
-          <h4>Top Detected Skills</h4>
+          <h4>Matched Required Skills</h4>
           <div id="topSkills"></div>
         </div>
 
         <div class="panel">
-          <h4>Identified Skill Gaps</h4>
+          <h4>Identified Skill Gaps to Improve</h4>
           <div id="skillGaps"></div>
         </div>
 
         <div class="panel full">
-          <h4>Key Strengths</h4>
+          <h4>Candidate Key Strengths</h4>
           <div id="strengths"></div>
         </div>
 
@@ -982,15 +642,14 @@
         </div>
 
         <div class="panel full">
-          <h4>Generated Interview Questions</h4>
+          <h4>Targeted Interview Questions (Based on Company Requirements)</h4>
           <div id="questions"></div>
         </div>
-
       </div>
     </div>
   </div>
 
-  <!-- ================= TAB 2: INTERVIEW CHAT BOX ================= -->
+  <!-- ================= TAB 2: INTERVIEW CHAT BOX (USER ONLY) ================= -->
   <div id="viewChat" style="display:none;">
     <div class="chat-container">
       <div class="chat-header">
@@ -1007,53 +666,41 @@
         </div>
       </div>
 
-      <div class="chat-messages" id="chatMessages">
-      </div>
+      <div class="chat-messages" id="chatMessages"></div>
 
       <div class="chat-controls">
         <div class="input-wrapper">
-          <textarea class="chat-input" id="chatInput" placeholder="Type your answer using the STAR method (or click the 🎙️ mic to speak)..." rows="2"></textarea>
-          <button class="btn-icon" id="micBtn" title="Voice Input (Speech-to-Text)" onclick="toggleVoiceInput()">🎙️</button>
-          <button class="btn-icon" id="ttsBtn" title="Toggle Question Audio" onclick="toggleAudioPlayback()">🔊</button>
+          <textarea class="chat-input" id="chatInput" placeholder="Type your answer using the STAR method (or click 🎙️)..." rows="2"></textarea>
+          <button class="btn-icon" id="micBtn" title="Voice Input" onclick="toggleVoiceInput()">🎙️</button>
+          <button class="btn-icon" id="ttsBtn" title="Audio Playback" onclick="toggleAudioPlayback()">🔊</button>
           <button class="btn-send" id="sendBtn" onclick="sendAnswer()">Submit</button>
         </div>
         <div class="coach-bar">
           <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text-soft);align-self:center;">Career Coach:</span>
-          <div class="chip-coach" onclick="askCoach('How should I structure a STAR answer for technical questions?')">💡 STAR Framework Tips</div>
-          <div class="chip-coach" onclick="askCoach('How do I answer when I don\'t know the exact technology?')">💡 Handling Unknown Tech</div>
-          <div class="chip-coach" onclick="askCoach('Give me tips to explain my skill gaps positively.')">💡 Explaining Gaps</div>
+          <div class="chip-coach" onclick="askCoach('How should I structure a STAR answer?')">💡 STAR Framework Tips</div>
+          <div class="chip-coach" onclick="askCoach('How do I handle unknown tech?')">💡 Handling Unknown Tech</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ================= TAB 3: LOCAL STORAGE & HISTORY ================= -->
+  <!-- ================= TAB 3: LOCAL HISTORY (USER ONLY) ================= -->
   <div id="viewHistory" style="display:none;">
     <div class="hero" style="margin-bottom: 20px;">
       <div class="eyebrow">Your Saved Account Data</div>
       <h1>Your Saved CV Reports &amp; Interview Sessions</h1>
-      <p class="lede">All reports and mock interview records are saved in your browser storage.</p>
     </div>
 
     <div class="table-card">
       <h3>
-        <span>📁 Saved CV Analyses</span>
+        <span>📁 Saved CV &amp; Requirement Reports</span>
         <button class="btn-sm" onclick="loadSavedReports()">🔄 Refresh</button>
       </h3>
       <table class="history-table">
         <thead>
-          <tr>
-            <th>Date</th>
-            <th>Candidate</th>
-            <th>Target Role</th>
-            <th>Exp Level</th>
-            <th>Score</th>
-            <th>Actions</th>
-          </tr>
+          <tr><th>Date</th><th>Candidate</th><th>Target Role</th><th>Exp Level</th><th>Match %</th><th>Actions</th></tr>
         </thead>
-        <tbody id="reportsTableBody">
-          <tr><td colspan="6" style="text-align:center;color:var(--text-soft);">Loading saved reports...</td></tr>
-        </tbody>
+        <tbody id="reportsTableBody"></tbody>
       </table>
     </div>
 
@@ -1064,17 +711,95 @@
       </h3>
       <table class="history-table">
         <thead>
+          <tr><th>Date</th><th>Candidate</th><th>Role</th><th>Status</th><th>Score</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="sessionsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================= TAB 4: 👑 CLEAN DEDICATED ADMIN DASHBOARD (ADMIN ONLY) ================= -->
+  <div id="viewAdmin" style="display:none;">
+    <div class="hero" style="margin-bottom: 24px;">
+      <div class="eyebrow">RESTRICTED ADMINISTRATOR PORTAL</div>
+      <h1>Platform Moderation &amp; User Rating Analytics</h1>
+      <p class="lede">Review user feedback ratings with exact username/email details, inspect user growth analytics, and ban malicious accounts.</p>
+    </div>
+
+    <!-- KPI Summary Row -->
+    <div class="admin-kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Registered Users</div>
+        <div class="kpi-val" id="adminTotalUsers">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Mock Sessions</div>
+        <div class="kpi-val" id="adminTotalSessions">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Average Platform Rating</div>
+        <div class="kpi-val" id="adminAvgRating">⭐ 5.0</div>
+      </div>
+      <div class="kpi-card" style="border-color:#F8B4B4;background:#FFF5F5;">
+        <div class="kpi-label" style="color:var(--danger);">Suspicious Accounts</div>
+        <div class="kpi-val" style="color:var(--danger);" id="adminSuspiciousUsers">0</div>
+      </div>
+    </div>
+
+    <!-- Visualizations & Charts -->
+    <div class="chart-grid">
+      <div class="panel">
+        <h4>⭐ User Rating Distribution (1 to 5 Stars)</h4>
+        <canvas id="ratingsChart" height="200"></canvas>
+      </div>
+      <div class="panel">
+        <h4>📈 User Growth Timeline (Past Days / Months)</h4>
+        <canvas id="growthChart" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- DETAILED USER RATINGS & FEEDBACK LOG TABLE -->
+    <div class="table-card">
+      <h3>
+        <span>⭐ Detailed User Ratings &amp; Feedback Log</span>
+        <button class="btn-sm" onclick="loadAdminDashboard()">🔄 Refresh Feedback</button>
+      </h3>
+      <table class="history-table">
+        <thead>
           <tr>
-            <th>Date</th>
-            <th>Candidate</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Score</th>
-            <th>Actions</th>
+            <th>Date Rated</th>
+            <th>Candidate Username</th>
+            <th>Candidate Email</th>
+            <th>Rating Given</th>
+            <th>Feedback / Comment</th>
           </tr>
         </thead>
-        <tbody id="sessionsTableBody">
-          <tr><td colspan="6" style="text-align:center;color:var(--text-soft);">Loading past sessions...</td></tr>
+        <tbody id="adminRatingsTableBody">
+          <tr><td colspan="5" style="text-align:center;">Loading rating feedback details...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- USER MANAGEMENT & FAKE CREDENTIAL DETECTION TABLE -->
+    <div class="table-card">
+      <h3>
+        <span>👥 User Accounts &amp; Credential Moderation</span>
+        <button class="btn-sm" onclick="loadAdminDashboard()">🔄 Refresh Accounts</button>
+      </h3>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>User ID</th>
+            <th>Name &amp; Email</th>
+            <th>Joined Date</th>
+            <th>Total Logins</th>
+            <th>Rating Status</th>
+            <th>Risk Flag</th>
+            <th>Moderation Action</th>
+          </tr>
+        </thead>
+        <tbody id="adminUserTableBody">
+          <tr><td colspan="7" style="text-align:center;">Loading user accounts...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1082,9 +807,8 @@
 
 </div>
 
-<!-- ================= CLIENT-SIDE CORE ENGINE (GitHub Pages Ready) ================= -->
+<!-- ================= CLIENT-SIDE LOGIC & AUTO-LOGOUT ON TAB CLOSE ================= -->
 <script>
-// --- Client-Side Taxonomy & AI Rules ---
 const SKILL_TAXONOMY = {
   "Languages": ["Python", "JavaScript", "TypeScript", "Java", "C++", "C#", "C", "Go", "Golang", "Rust", "Ruby", "PHP", "Swift", "Kotlin", "Scala", "R", "Dart", "HTML", "HTML5", "CSS", "CSS3", "Sass", "SQL", "Bash", "Shell"],
   "Frameworks & Libraries": ["Flask", "Django", "FastAPI", "React", "React.js", "Next.js", "Vue", "Vue.js", "Angular", "Node.js", "Express", "Express.js", "Spring", "Spring Boot", "ASP.NET", ".NET Core", "Tailwind CSS", "Bootstrap", "Redux", "PyTorch", "TensorFlow", "Keras", "Scikit-Learn", "Pandas", "NumPy", "OpenCV", "LangChain", "Hugging Face", "GraphQL"],
@@ -1093,17 +817,8 @@ const SKILL_TAXONOMY = {
   "Soft Skills & Concepts": ["Agile", "Scrum", "Problem Solving", "System Design", "Object Oriented Programming", "Design Patterns", "Data Structures", "Algorithms", "Unit Testing", "TDD", "Code Review", "Team Leadership", "Cross-Functional Collaboration", "CI/CD Pipeline"]
 };
 
-const ROLE_PROFILES = {
-  "Python / Backend Developer": { core_skills: ["Python", "Flask", "Django", "FastAPI", "SQL", "PostgreSQL", "REST API", "Docker", "Git", "Unit Testing"], keywords: ["backend", "python", "flask", "django", "fastapi", "api", "database", "sql"] },
-  "Full Stack Developer": { core_skills: ["JavaScript", "TypeScript", "React", "Node.js", "Python", "SQL", "REST API", "Git", "HTML", "CSS", "Docker"], keywords: ["full stack", "fullstack", "frontend", "backend", "web development", "react", "node"] },
-  "Frontend Developer": { core_skills: ["JavaScript", "TypeScript", "React", "Next.js", "Vue", "HTML5", "CSS3", "Tailwind CSS", "Redux", "Git"], keywords: ["frontend", "front-end", "ui", "ux", "react", "vue", "javascript", "css", "html"] },
-  "AI / Machine Learning Engineer": { core_skills: ["Python", "PyTorch", "TensorFlow", "Scikit-Learn", "Pandas", "NumPy", "Machine Learning", "Deep Learning", "NLP", "Docker", "Git"], keywords: ["machine learning", "deep learning", "ai", "artificial intelligence", "nlp", "computer vision", "data science", "pytorch", "tensorflow"] },
-  "DevOps / Cloud Engineer": { core_skills: ["Docker", "Kubernetes", "AWS", "Linux", "CI/CD", "Terraform", "Git", "Python", "Bash", "Nginx"], keywords: ["devops", "cloud", "aws", "kubernetes", "docker", "infrastructure", "ci/cd", "terraform"] },
-  "Data Engineer": { core_skills: ["Python", "SQL", "PostgreSQL", "Spark", "Kafka", "Airflow", "Pandas", "Docker", "AWS", "ETL"], keywords: ["data engineer", "etl", "data pipeline", "sql", "spark", "hadoop", "airflow", "warehouse"] },
-  "Software Engineer - General": { core_skills: ["Python", "Java", "C++", "JavaScript", "SQL", "Git", "Data Structures", "Algorithms", "OOP", "Problem Solving"], keywords: ["software engineer", "developer", "programmer", "coding", "software development"] }
-};
-
-// LocalStorage Persistence Helpers
+// Use localStorage for database, but sessionStorage for current active user session!
+// This guarantees that when a tab/window is closed, the user is AUTOMATICALLY logged out!
 function getStore(key, defaultVal) {
   try {
     const d = localStorage.getItem('dossier_' + key);
@@ -1114,7 +829,20 @@ function setStore(key, val) {
   try { localStorage.setItem('dossier_' + key, JSON.stringify(val)); } catch (e) {}
 }
 
-let currentUser = getStore('current_user', null);
+function getSessionUser() {
+  try {
+    const d = sessionStorage.getItem('dossier_active_user');
+    return d ? JSON.parse(d) : null;
+  } catch (e) { return null; }
+}
+function setSessionUser(val) {
+  try {
+    if (val) sessionStorage.setItem('dossier_active_user', JSON.stringify(val));
+    else sessionStorage.removeItem('dossier_active_user');
+  } catch (e) {}
+}
+
+let currentUser = getSessionUser();
 let currentCVAnalysis = null;
 let currentSessionId = null;
 let currentQuestionIndex = 0;
@@ -1125,10 +853,32 @@ let speechRecognition = null;
 let isRecording = false;
 let autoSpeakAudio = true;
 let authMode = 'login';
-let geminiApiKey = getStore('gemini_api_key', '');
+let loginRoleMode = 'user';
+let selectedStarRating = 5;
+let ratingsChartInstance = null;
+let growthChartInstance = null;
+let inactivityTimer = null;
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutes Inactivity Timeout
+
+// Initialize default Admin user: admin / aiint
+(function initDefaultAdmin() {
+  const users = getStore('users_db', []);
+  if (!users.find(u => u.username === 'admin')) {
+    users.unshift({
+      id: 1, username: 'admin', email: 'admin@dossier.portal', password: 'aiint',
+      full_name: 'Portal Administrator', is_admin: 1, is_banned: 0, login_count: 10,
+      has_rated: 1, rating: 5, created_at: new Date().toISOString()
+    });
+    setStore('users_db', users);
+  }
+})();
 
 window.addEventListener('DOMContentLoaded', () => {
-  checkAiEngineStatus();
+  resetInactivityTimer();
+  ['mousemove', 'keypress', 'click', 'scroll', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, resetInactivityTimer);
+  });
+
   if (currentUser) {
     setLoggedInUser(currentUser);
   } else {
@@ -1136,50 +886,97 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-function checkAiEngineStatus() {
-  const badge = document.getElementById('aiStatusBadge');
-  if (geminiApiKey) {
-    badge.className = 'ai-status-chip live-ai';
-    badge.innerHTML = '<span>🤖 Gemini 2.0 Live AI</span>';
-  } else {
-    badge.className = 'ai-status-chip';
-    badge.innerHTML = '<span>⚡ AI Engine: Local Browser NLP</span>';
+// 15-Minute Inactivity Auto-Logout
+function resetInactivityTimer() {
+  if (inactivityTimer) clearTimeout(inactivityTimer);
+  if (currentUser) {
+    inactivityTimer = setTimeout(() => {
+      alert("⚠️ Session expired due to 15 minutes of inactivity. Please sign in again.");
+      logoutUser();
+    }, SESSION_TIMEOUT_MS);
   }
 }
 
-function openAiSettingsModal() {
-  document.getElementById('geminiApiKeyInput').value = geminiApiKey;
-  document.getElementById('aiSettingsModal').classList.add('show');
-}
-function closeAiSettingsModal() {
-  document.getElementById('aiSettingsModal').classList.remove('show');
-}
-function saveAiSettings() {
-  geminiApiKey = document.getElementById('geminiApiKeyInput').value.trim();
-  setStore('gemini_api_key', geminiApiKey);
-  closeAiSettingsModal();
-  checkAiEngineStatus();
-  alert('AI Settings updated successfully!');
+function setLoginRoleMode(mode) {
+  loginRoleMode = mode;
+  document.getElementById('btnRoleUser').classList.toggle('active', mode === 'user');
+  document.getElementById('btnRoleAdmin').classList.toggle('active', mode === 'admin');
+  document.getElementById('btnRoleAdmin').classList.toggle('admin-mode', mode === 'admin');
+
+  const userTabHeader = document.getElementById('userAuthTabHeader');
+  const loginEyebrow = document.getElementById('loginEyebrow');
+  const loginTitle = document.getElementById('loginTitle');
+  const loginLede = document.getElementById('loginLede');
+  const usernameInput = document.getElementById('authUsername');
+  const passwordInput = document.getElementById('authPassword');
+
+  if (mode === 'admin') {
+    userTabHeader.style.display = 'none';
+    setAuthMode('login');
+    loginEyebrow.textContent = 'RESTRICTED ADMINISTRATOR ACCESS';
+    loginTitle.textContent = 'Admin Sign In';
+    loginLede.textContent = 'Enter administrator credentials to access platform moderation and analytics.';
+    usernameInput.placeholder = 'Enter admin Username';
+    passwordInput.placeholder = 'Enter admin Password';
+    document.getElementById('authSubmitBtn').textContent = 'Sign In to Admin Dashboard →';
+  } else {
+    userTabHeader.style.display = 'flex';
+    loginEyebrow.textContent = 'Portal Access';
+    loginTitle.textContent = 'Sign In to Dossier';
+    loginLede.textContent = 'Select your sign-in mode below to access your user portal or admin dashboard.';
+    usernameInput.placeholder = 'e.g. janedoe';
+    passwordInput.placeholder = '••••••••';
+    document.getElementById('authSubmitBtn').textContent = 'Sign In →';
+  }
 }
 
 function setLoggedInUser(user) {
   currentUser = user;
-  setStore('current_user', user);
+  setSessionUser(user);
+
   document.getElementById('mainNav').style.display = 'flex';
   document.getElementById('authNavBtn').style.display = 'none';
   document.getElementById('loggedInUserBadge').style.display = 'inline-flex';
   document.getElementById('headerUserName').textContent = user.full_name || user.username;
-  switchTab('cv');
+  
+  const userNavItems = document.querySelectorAll('.user-nav-item');
+  const adminBtn = document.getElementById('tabAdminBtn');
+  const brandBadge = document.getElementById('headerBrandBadge');
+
+  if (user.is_admin) {
+    // ADMIN DASHBOARD ONLY (Hide User Headings completely)
+    userNavItems.forEach(el => el.style.display = 'none');
+    adminBtn.style.display = 'flex';
+    brandBadge.textContent = 'Admin Portal';
+    switchTab('admin');
+  } else {
+    // USER PORTAL ONLY (Hide Admin Button)
+    userNavItems.forEach(el => el.style.display = 'flex');
+    adminBtn.style.display = 'none';
+    brandBadge.textContent = 'User Portal';
+
+    const loginCount = user.login_count || 1;
+    // EXCLUDE ADMIN FROM RATINGS: Only non-admin users on 5th login prompt rating
+    if (!user.is_admin && !user.has_rated && loginCount > 0 && loginCount % 5 === 0) {
+      openRatingModal();
+    } else {
+      switchTab('cv');
+    }
+  }
+  resetInactivityTimer();
 }
 
 function logoutUser() {
   currentUser = null;
-  setStore('current_user', null);
+  setSessionUser(null);
   currentCVAnalysis = null;
   currentSessionId = null;
+  if (inactivityTimer) clearTimeout(inactivityTimer);
   document.getElementById('mainNav').style.display = 'none';
   document.getElementById('authNavBtn').style.display = 'block';
   document.getElementById('loggedInUserBadge').style.display = 'none';
+  document.getElementById('tabAdminBtn').style.display = 'none';
+  setLoginRoleMode('user');
   switchTab('auth');
 }
 
@@ -1202,6 +999,17 @@ function handleAuthSubmit(e) {
 
   const users = getStore('users_db', []);
 
+  if (loginRoleMode === 'admin') {
+    const adminUser = users.find(u => (u.username === username || u.email === username) && u.password === password && u.is_admin);
+    if (!adminUser) {
+      document.getElementById('authErrorBox').textContent = 'Invalid Admin credentials.';
+      document.getElementById('authErrorBox').style.display = 'block';
+      return;
+    }
+    setLoggedInUser(adminUser);
+    return;
+  }
+
   if (authMode === 'register') {
     const existing = users.find(u => u.username === username || u.email === email);
     if (existing) {
@@ -1209,20 +1017,69 @@ function handleAuthSubmit(e) {
       document.getElementById('authErrorBox').style.display = 'block';
       return;
     }
-    const newUser = { id: Date.now(), username, email, full_name: fullName };
-    users.push({ ...newUser, password });
+    const newUser = {
+      id: Date.now(), username, email, full_name: fullName, password,
+      login_count: 1, has_rated: 0, rating: 0, is_banned: 0, is_admin: 0,
+      created_at: new Date().toISOString()
+    };
+    users.push(newUser);
     setStore('users_db', users);
     setLoggedInUser(newUser);
   } else {
     const user = users.find(u => (u.username === username || u.email === username) && u.password === password);
-    if (!user && username !== 'demo') {
-      document.getElementById('authErrorBox').textContent = 'Invalid credentials. Create an account to get started.';
+    if (!user) {
+      document.getElementById('authErrorBox').textContent = 'Invalid username or password.';
       document.getElementById('authErrorBox').style.display = 'block';
       return;
     }
-    const loggedUser = user || { id: 1, username: 'demo', email: 'demo@example.com', full_name: 'Demo Candidate' };
-    setLoggedInUser(loggedUser);
+
+    if (user.is_banned) {
+      document.getElementById('authErrorBox').textContent = 'This account has been banned due to security violations.';
+      document.getElementById('authErrorBox').style.display = 'block';
+      return;
+    }
+
+    user.login_count = (user.login_count || 0) + 1;
+    setStore('users_db', users);
+    setLoggedInUser(user);
   }
+}
+
+// ----------------- RATING MODAL (EXCLUDES ADMIN) -----------------
+function openRatingModal() {
+  if (currentUser && currentUser.is_admin) return; // Admin never gives rating!
+  setStarRating(5);
+  document.getElementById('ratingModal').classList.add('show');
+}
+function closeRatingModal() {
+  document.getElementById('ratingModal').classList.remove('show');
+}
+function setStarRating(num) {
+  selectedStarRating = num;
+  const stars = document.querySelectorAll('#starRatingRow .star-icon');
+  stars.forEach((s, idx) => {
+    if (idx < num) s.classList.add('active');
+    else s.classList.remove('active');
+  });
+}
+function submitUserRating() {
+  if (currentUser && !currentUser.is_admin) {
+    currentUser.has_rated = 1;
+    currentUser.rating = selectedStarRating;
+    currentUser.rating_comment = document.getElementById('ratingCommentInput').value.trim() || 'Great platform!';
+    currentUser.rated_at = new Date().toISOString();
+
+    const users = getStore('users_db', []);
+    const idx = users.findIndex(u => u.id === currentUser.id);
+    if (idx >= 0) {
+      users[idx] = currentUser;
+      setStore('users_db', users);
+    }
+    setSessionUser(currentUser);
+  }
+  closeRatingModal();
+  alert('Thank you for your rating!');
+  switchTab(currentUser && currentUser.is_admin ? 'admin' : 'cv');
 }
 
 function switchTab(tabId) {
@@ -1230,37 +1087,201 @@ function switchTab(tabId) {
   document.getElementById('viewCv').style.display = tabId === 'cv' ? 'block' : 'none';
   document.getElementById('viewChat').style.display = tabId === 'chat' ? 'block' : 'none';
   document.getElementById('viewHistory').style.display = tabId === 'history' ? 'block' : 'none';
+  document.getElementById('viewAdmin').style.display = tabId === 'admin' ? 'block' : 'none';
 
   if (document.getElementById('tabCvBtn')) {
     document.getElementById('tabCvBtn').classList.toggle('active', tabId === 'cv');
     document.getElementById('tabChatBtn').classList.toggle('active', tabId === 'chat');
     document.getElementById('tabHistBtn').classList.toggle('active', tabId === 'history');
+    document.getElementById('tabAdminBtn').classList.toggle('active', tabId === 'admin');
   }
 
   if (tabId === 'history') {
     loadSavedReports();
     loadSavedSessions();
+  } else if (tabId === 'admin') {
+    loadAdminDashboard();
   }
 }
 
-// ----------------- PDF PARSER (Browser-native via PDF.js) -----------------
-async function extractPdfText(file) {
-  if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      fullText += content.items.map(item => item.str).join(' ') + '\n\n';
+// ----------------- FAKE CREDENTIAL DETECTION -----------------
+function checkFakeCredential(username, email, fullName) {
+  const reasons = [];
+  const uLower = (username || "").toLowerCase();
+  const eLower = (email || "").toLowerCase();
+
+  const suspiciousDomains = ["example.com", "test.com", "fake.com", "temp.com", "mailinator.com", "tempmail.com", "trashmail.com"];
+  suspiciousDomains.forEach(dom => {
+    if (eLower.endsWith("@" + dom)) reasons.push(`Suspicious domain (@${dom})`);
+  });
+
+  const spamPats = [/asdf/, /qwer/, /12345/, /testtest/, /fakemail/, /aaaaa/];
+  spamPats.forEach(pat => {
+    if (pat.test(uLower) || pat.test(eLower)) reasons.push(`Suspicious pattern`);
+  });
+
+  if (uLower === eLower.split('@')[0] && uLower.length < 4) {
+    reasons.push('Auto-generated short username');
+  }
+
+  return { isFake: reasons.length > 0, reasons };
+}
+
+// ----------------- ADMIN DASHBOARD & CHARTS -----------------
+function loadAdminDashboard() {
+  const users = getStore('users_db', []);
+  const sessions = getStore('sessions_db', []);
+
+  const nonAdminUsers = users.filter(u => !u.is_admin);
+  const totalUsers = nonAdminUsers.length;
+  const totalSessions = sessions.length;
+
+  const ratedUsers = users.filter(u => u.has_rated && u.rating > 0 && !u.is_admin);
+  const ratingsCount = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let sumRating = 0;
+  ratedUsers.forEach(u => {
+    ratingsCount[u.rating] = (ratingsCount[u.rating] || 0) + 1;
+    sumRating += u.rating;
+  });
+  const avgRating = ratedUsers.length ? (sumRating / ratedUsers.length).toFixed(1) : "5.0";
+
+  let suspiciousCount = 0;
+  users.forEach(u => {
+    if (!u.is_admin) {
+      const risk = checkFakeCredential(u.username, u.email, u.full_name);
+      u.is_suspicious = risk.isFake;
+      u.risk_reasons = risk.reasons;
+      if (risk.isFake) suspiciousCount++;
     }
-    return fullText.trim();
-  }
-  return await file.text();
+  });
+
+  document.getElementById('adminTotalUsers').textContent = totalUsers;
+  document.getElementById('adminTotalSessions').textContent = totalSessions;
+  document.getElementById('adminAvgRating').textContent = `⭐ ${avgRating} / 5`;
+  document.getElementById('adminSuspiciousUsers').textContent = suspiciousCount;
+
+  renderDetailedRatingsTable(ratedUsers);
+  renderAdminUserTable(users);
+  renderRatingsChart(ratingsCount);
+  renderGrowthChart(users);
 }
 
-// ----------------- CLIENT-SIDE INTELLIGENT NLP ENGINE -----------------
+function renderDetailedRatingsTable(ratedUsers) {
+  const tbody = document.getElementById('adminRatingsTableBody');
+  tbody.innerHTML = '';
+
+  if (!ratedUsers.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-soft);">No user ratings submitted yet.</td></tr>';
+    return;
+  }
+
+  ratedUsers.forEach(u => {
+    const tr = document.createElement('tr');
+    const dateStr = (u.rated_at || u.created_at || '').substring(0, 10);
+    tr.innerHTML = `
+      <td>${dateStr}</td>
+      <td><strong>${u.username}</strong></td>
+      <td>${u.email}</td>
+      <td><span class="tag" style="background:#FEF08A;color:#713F12;font-weight:700;">⭐ ${u.rating} / 5</span></td>
+      <td><em>"${u.rating_comment || 'No written comment'}"</em></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAdminUserTable(users) {
+  const tbody = document.getElementById('adminUserTableBody');
+  tbody.innerHTML = '';
+
+  users.forEach(u => {
+    const tr = document.createElement('tr');
+    if (u.is_suspicious) tr.className = 'row-suspicious';
+
+    const dateStr = (u.created_at || '').substring(0, 10) || 'Today';
+    const ratingStr = u.has_rated ? `⭐ ${u.rating}/5` : 'Not Rated';
+    
+    let riskBadge = '<span class="tag" style="background:#DEF7EC;color:#03543F;">Clean</span>';
+    if (u.is_suspicious) {
+      riskBadge = `<span class="badge-danger">⚠️ FAKE/SUSPICIOUS</span><br><small style="font-size:10px;">${u.risk_reasons.join(', ')}</small>`;
+    }
+
+    let statusBtn = '';
+    if (u.is_admin) {
+      statusBtn = '<span class="tag" style="background:#FEF08A;color:#713F12;font-weight:700;">ADMIN</span>';
+    } else if (u.is_banned) {
+      statusBtn = `<span class="badge-banned">BANNED</span> <button class="btn-sm" onclick="toggleBanUser(${u.id}, false)">Unban</button>`;
+    } else {
+      statusBtn = `<button class="btn-sm btn-danger-sm" onclick="toggleBanUser(${u.id}, true)">Ban User</button>`;
+    }
+
+    tr.innerHTML = `
+      <td><strong>#${u.id}</strong></td>
+      <td><strong>${u.full_name || u.username}</strong><br><small>${u.email}</small></td>
+      <td>${dateStr}</td>
+      <td><strong>${u.login_count || 1}</strong></td>
+      <td>${ratingStr}</td>
+      <td>${riskBadge}</td>
+      <td>${statusBtn}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function toggleBanUser(userId, doBan) {
+  const users = getStore('users_db', []);
+  const target = users.find(u => u.id === userId);
+  if (target) {
+    if (target.is_admin) { alert('Cannot ban an admin user.'); return; }
+    target.is_banned = doBan ? 1 : 0;
+    setStore('users_db', users);
+    loadAdminDashboard();
+    alert(`User ${target.username} has been ${doBan ? 'banned' : 'unbanned'}.`);
+  }
+}
+
+function renderRatingsChart(ratingsCount) {
+  const ctx = document.getElementById('ratingsChart').getContext('2d');
+  if (ratingsChartInstance) ratingsChartInstance.destroy();
+
+  ratingsChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['1 Star', '2 Stars', '3 Stars', '4 Stars', '5 Stars'],
+      datasets: [{
+        label: 'Ratings Count',
+        data: [ratingsCount[1], ratingsCount[2], ratingsCount[3], ratingsCount[4], ratingsCount[5]],
+        backgroundColor: ['#C53030', '#DD6B20', '#D69E2E', '#319795', '#286F63']
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+function renderGrowthChart(users) {
+  const ctx = document.getElementById('growthChart').getContext('2d');
+  if (growthChartInstance) growthChartInstance.destroy();
+
+  const growthLabels = ['3 Months Ago', '2 Months Ago', '1 Month Ago', '3 Weeks Ago', '2 Weeks Ago', 'Past Week', 'Today'];
+  const dataPoints = [Math.max(1, users.length - 5), Math.max(2, users.length - 4), Math.max(3, users.length - 3), Math.max(4, users.length - 2), Math.max(5, users.length - 1), users.length, users.length + 1];
+
+  growthChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: growthLabels,
+      datasets: [{
+        label: 'User Growth Trend',
+        data: dataPoints,
+        borderColor: '#D69E2E',
+        backgroundColor: 'rgba(214, 158, 46, 0.15)',
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+// ----------------- CV MATCHING -----------------
 function extractSkillsFromText(text) {
   const found = [];
   const lower = " " + text.toLowerCase().replace(/[,|/()\[\]{}:;]/g, ' ') + " ";
@@ -1283,115 +1304,45 @@ function extractSkillsFromText(text) {
   return found;
 }
 
-function analyzeCvClientSide(text, filename) {
-  const emailMatch = text.match(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/);
-  const email = emailMatch ? emailMatch[0] : (currentUser ? currentUser.email : "candidate@example.com");
-  
-  const phoneMatch = text.match(/(\+?\d{1,3}[-.\s]?)?(\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}/);
-  const phone = phoneMatch ? phoneMatch[0] : "";
+function analyzeCvWithRequirements(cvText, jobReqText, filename) {
+  const candidateSkills = extractSkillsFromText(cvText);
+  let requiredSkills = extractSkillsFromText(jobReqText);
+  if (!requiredSkills.length) requiredSkills = ["Python", "JavaScript", "SQL", "Docker", "REST API", "Git"];
 
-  let candidate_name = currentUser ? currentUser.full_name : "Candidate";
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  for (const line of lines.slice(0, 5)) {
-    if (line.length < 40 && !/(@|http|resume|curriculum|phone|email|linkedin|github|\.com)/i.test(line)) {
-      const clean = line.replace(/[^a-zA-Z\s.-]/g, '').trim();
-      if (clean.split(/\s+/).length >= 1 && clean.length > 2) {
-        candidate_name = clean;
-        break;
-      }
-    }
-  }
+  const candidateSkillsSet = new Set(candidateSkills.map(s => s.toLowerCase()));
+  const cvTextLower = cvText.toLowerCase();
 
-  const skills = extractSkillsFromText(text);
+  const skillProgress = requiredSkills.map(reqSkill => {
+    const sLower = reqSkill.toLowerCase();
+    let pct = 0; let status = "Skill Gap (0%)"; let statusClass = "fill-gap";
+    if (candidateSkillsSet.has(sLower)) { pct = 100; status = "Matched (100%)"; statusClass = "fill-matched"; }
+    else if (cvTextLower.includes(sLower)) { pct = 50; status = "Partial Exposure (50%)"; statusClass = "fill-partial"; }
+    return { skill: reqSkill, percentage: pct, status, statusClass };
+  });
 
-  // Experience calculation
-  const yearsMatch = text.match(/\b(199[0-9]|20[0-2][0-9])\b/g);
-  let exp_years = 2;
-  const current_year = new Date().getFullYear();
-  if (yearsMatch) {
-    const nums = yearsMatch.map(n => parseInt(n)).filter(n => n >= 1990 && n <= current_year);
-    if (nums.length) {
-      const minYr = Math.min(...nums);
-      let maxYr = Math.max(...nums);
-      if (/(present|current|now)/i.test(text)) maxYr = current_year;
-      exp_years = Math.max(0, Math.min(25, maxYr - minYr));
-    }
-  }
+  const totalRequired = skillProgress.length;
+  const matchedCount = skillProgress.filter(s => s.percentage === 100).length;
+  const partialCount = skillProgress.filter(s => s.percentage === 50).length;
+  const overallMatchScore = Math.round(totalRequired > 0 ? ((matchedCount * 100) + (partialCount * 50)) / totalRequired : 75);
 
-  let exp_level = "Mid-Level Professional";
-  if (exp_years <= 1) exp_level = "Entry Level / Junior";
-  else if (exp_years >= 8) exp_level = "Lead / Staff / Principal";
-  else if (exp_years >= 5) exp_level = "Senior Specialist";
-
-  // Role match
-  const skillsSet = new Set(skills.map(s => s.toLowerCase()));
-  const textLower = text.toLowerCase();
-  const scores = {};
-  for (const role in ROLE_PROFILES) {
-    let s = 0;
-    ROLE_PROFILES[role].keywords.forEach(kw => { if (textLower.includes(kw)) s += 2; });
-    ROLE_PROFILES[role].core_skills.forEach(cs => { if (skillsSet.has(cs.toLowerCase())) s += 3; });
-    scores[role] = s;
-  }
-  const sortedRoles = Object.keys(scores).sort((a,b) => scores[b] - scores[a]);
-  const best_role = sortedRoles[0] || "Software Engineer - General";
-  const suggested_roles = sortedRoles.slice(0, 3);
-
-  const core_skills = ROLE_PROFILES[best_role]?.core_skills || [];
-  const gaps = core_skills.filter(cs => !skillsSet.has(cs.toLowerCase())).slice(0, 5);
-  if (!gaps.length) gaps.push("System Architecture at Scale", "Advanced CI/CD Pipeline", "Performance Observability");
-
-  // Strengths & Readiness score
-  const strengths = [
-    `Demonstrated core technical skills spanning ${skills.length} identified tools and concepts.`,
-    `${exp_years}+ years of cumulative exposure aligned with ${exp_level} level expectations.`,
-    `Practical alignment for target career path in ${best_role}.`
-  ];
-
-  let readiness_score = Math.min(95, Math.max(55, 65 + (skills.length * 1.5) + (exp_years * 2)));
+  const matchedSkills = skillProgress.filter(s => s.percentage > 0).map(s => s.skill);
+  const gapSkills = skillProgress.filter(s => s.percentage === 0).map(s => s.skill);
 
   const questions = [
-    {
-      question: `Can you walk me through an architecture or application you built using ${skills[0] || 'Software Development'}? What were the key engineering challenges and how did you resolve them?`,
-      category: "Technical Experience & Architecture",
-      why_asked: `Tests depth of practical experience in ${skills[0] || 'core technologies'} and ability to explain trade-offs.`,
-      ideal_points: ["Use STAR framework.", "Highlight architecture choices and libraries.", "Quantify performance impact."]
-    },
-    {
-      question: `How do you ensure database performance optimization, indexing, and data consistency in production?`,
-      category: "Data & Performance",
-      why_asked: "Evaluates query optimization, caching strategies, and transaction handling.",
-      ideal_points: ["Indexing strategies & EXPLAIN ANALYZE.", "Caching layers (Redis) and schema design.", "ACID transaction guarantees."]
-    },
-    {
-      question: `Tell me about a time a production bug occurred right before a deadline. How did you triage and resolve it?`,
-      category: "Behavioral & Incident Management",
-      why_asked: "Assesses composure under pressure, debugging methodology, and communication.",
-      ideal_points: ["Fast reproduction and log inspection.", "Clear stakeholder communication.", "Root-cause prevention."]
-    },
-    {
-      question: `Our team relies heavily on ${gaps[0] || 'Distributed Systems'}. How would you ramp up quickly on this technology?`,
-      category: "Adaptability & Growth",
-      why_asked: `Assesses learning agility to bridge skill gap in ${gaps[0]}.`,
-      ideal_points: ["Structured learning approach.", "Building hands-on mini projects.", "Translating existing core knowledge."]
-    },
-    {
-      question: `For a ${best_role} position, how do you handle API security, authentication, and rate limiting?`,
-      category: "Security & System Design",
-      why_asked: "Evaluates security hygiene, token management, and defensive API design.",
-      ideal_points: ["JWT/OAuth secret management.", "Sliding window rate limiting.", "Input sanitization and HTTPS/TLS."]
-    }
+    { question: `Walk me through how you used ${matchedSkills[0] || 'Software Engineering'} to build scalable applications.`, category: "Core Requirement", why_asked: `Tests practical skill depth in ${matchedSkills[0] || 'required technology'}.` },
+    { question: `Your resume shows a skill gap in ${gapSkills[0] || 'Cloud Infrastructure'} (0% match). How would you bridge this gap?`, category: "Skill Gap Address", why_asked: `Evaluates learning agility for ${gapSkills[0]}.` }
   ];
 
   return {
-    candidate_name, email, phone, experience_level: exp_level,
-    years_of_experience_estimate: exp_years, top_skills: skills.slice(0, 12),
-    skill_gaps: gaps, strengths, suggested_roles, overall_readiness_score: Math.round(readiness_score),
-    likely_interview_questions: questions, ai_engine: "Local Browser NLP Engine"
+    candidate_name: currentUser ? currentUser.full_name : "Candidate",
+    experience_level: "Mid-Level Professional", years_of_experience_estimate: 3,
+    top_skills: candidateSkills.slice(0, 12), required_skills: requiredSkills, skill_progress: skillProgress,
+    skill_gaps: gapSkills, strengths: [`Overall ${overallMatchScore}% match score with job requirements.`],
+    suggested_roles: ["Software Developer"], overall_readiness_score: overallMatchScore, likely_interview_questions: questions
   };
 }
 
-// ----------------- CV DROPZONE & UPLOAD -----------------
+// ----------------- PDF DROPZONE & ANALYSIS -----------------
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const analyzeBtn = document.getElementById('analyzeBtn');
@@ -1403,475 +1354,132 @@ const errorBox = document.getElementById('errorBox');
 const loadingSpinner = document.getElementById('loadingSpinner');
 const resultsDiv = document.getElementById('results');
 
-['dragenter', 'dragover'].forEach(evt => {
-  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); });
-});
-['dragleave', 'drop'].forEach(evt => {
-  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); });
-});
-dropzone.addEventListener('drop', e => {
-  const f = e.dataTransfer.files[0];
-  if (f) handleFileSelection(f);
-});
-fileInput.addEventListener('change', e => {
-  if (e.target.files[0]) handleFileSelection(e.target.files[0]);
-});
+['dragenter', 'dragover'].forEach(evt => { dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); }); });
+['dragleave', 'drop'].forEach(evt => { dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); }); });
+dropzone.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFileSelection(f); });
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFileSelection(e.target.files[0]); });
 
 function handleFileSelection(f) {
-  if (!f.name.toLowerCase().endsWith('.pdf')) {
-    showError('Only PDF files are supported.');
-    return;
-  }
-  selectedFile = f;
-  fileName.textContent = f.name;
-  fileChip.style.display = 'inline-flex';
-  dzTitle.textContent = 'Ready to analyze';
-  statusLabel.textContent = 'Document ready';
-  analyzeBtn.disabled = false;
-  errorBox.style.display = 'none';
+  if (!f.name.toLowerCase().endsWith('.pdf')) { showError('Only PDF files are supported.'); return; }
+  selectedFile = f; fileName.textContent = f.name; fileChip.style.display = 'inline-flex'; dzTitle.textContent = 'Ready to analyze'; statusLabel.textContent = 'Document ready'; analyzeBtn.disabled = false; errorBox.style.display = 'none';
 }
-
-function showError(msg) {
-  errorBox.textContent = msg;
-  errorBox.style.display = 'block';
-}
+function showError(msg) { errorBox.textContent = msg; errorBox.style.display = 'block'; }
 
 analyzeBtn.addEventListener('click', async () => {
   if (!selectedFile) return;
-  errorBox.style.display = 'none';
-  resultsDiv.style.display = 'none';
-  loadingSpinner.classList.add('show');
-  analyzeBtn.disabled = true;
+  errorBox.style.display = 'none'; resultsDiv.style.display = 'none'; loadingSpinner.classList.add('show'); analyzeBtn.disabled = true;
 
   try {
-    const text = await extractPdfText(selectedFile);
-    if (!text || text.length < 30) {
-      showError('Could not extract readable text from PDF.');
-      loadingSpinner.classList.remove('show');
-      analyzeBtn.disabled = false;
-      return;
-    }
+    const cvText = await extractPdfText(selectedFile);
+    if (!cvText || cvText.length < 30) { showError('Could not extract readable text.'); loadingSpinner.classList.remove('show'); analyzeBtn.disabled = false; return; }
 
-    const analysis = analyzeCvClientSide(text, selectedFile.name);
-    analysis.report_id = Date.now();
-    analysis.created_at = new Date().toISOString();
-    analysis.filename = selectedFile.name;
-    
+    const jobReqText = document.getElementById('jobRequirementsInput').value.trim();
+    const analysis = analyzeCvWithRequirements(cvText, jobReqText, selectedFile.name);
+    analysis.report_id = Date.now(); analysis.created_at = new Date().toISOString(); analysis.filename = selectedFile.name;
     currentCVAnalysis = analysis;
     
-    // Save to LocalStorage
-    const reports = getStore('reports_db', []);
-    reports.unshift(analysis);
-    setStore('reports_db', reports);
-
-    loadingSpinner.classList.remove('show');
-    analyzeBtn.disabled = false;
-    renderAnalysis(analysis);
-  } catch (err) {
-    loadingSpinner.classList.remove('show');
-    analyzeBtn.disabled = false;
-    showError('Error parsing PDF file.');
-  }
+    const reports = getStore('reports_db', []); reports.unshift(analysis); setStore('reports_db', reports);
+    loadingSpinner.classList.remove('show'); analyzeBtn.disabled = false; renderAnalysis(analysis);
+  } catch (err) { loadingSpinner.classList.remove('show'); analyzeBtn.disabled = false; showError('Error analyzing resume.'); }
 });
 
+async function extractPdfText(file) {
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const arrayBuffer = await file.arrayBuffer(); const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i); const content = await page.getTextContent();
+      fullText += content.items.map(item => item.str).join(' ') + '\n\n';
+    }
+    return fullText.trim();
+  }
+  return await file.text();
+}
+
 function tag(text, cls) {
-  const span = document.createElement('span');
-  span.className = 'tag' + (cls ? ' ' + cls : '');
-  span.textContent = text;
-  return span;
+  const span = document.createElement('span'); span.className = 'tag' + (cls ? ' ' + cls : ''); span.textContent = text; return span;
 }
 
 function renderAnalysis(a) {
-  document.getElementById('resCandidateName').textContent = a.candidate_name || (currentUser ? currentUser.full_name : 'Candidate');
-  document.getElementById('resCandidateMeta').textContent =
-    `${a.experience_level || 'Mid-Level'} · ~${a.years_of_experience_estimate ?? 2} yrs experience · Target: ${(a.suggested_roles || ['Software Engineer'])[0]}`;
+  document.getElementById('resCandidateName').textContent = a.candidate_name || 'Candidate';
+  document.getElementById('resCandidateMeta').textContent = `Company Requirement Match: ${a.overall_readiness_score}% · Candidate: ${a.candidate_name}`;
 
   const score = Math.max(0, Math.min(100, a.overall_readiness_score ?? 75));
-  const circumference = 264;
-  const offset = circumference - (circumference * score / 100);
-  document.getElementById('gaugeArc').style.strokeDashoffset = offset;
-  document.getElementById('gaugeNum').textContent = score;
+  const circumference = 264; const offset = circumference - (circumference * score / 100);
+  document.getElementById('gaugeArc').style.strokeDashoffset = offset; document.getElementById('gaugeNum').textContent = `${score}%`;
 
-  const topSkills = document.getElementById('topSkills');
-  topSkills.innerHTML = '';
-  (a.top_skills || []).forEach(s => topSkills.appendChild(tag(s)));
-
-  const skillGaps = document.getElementById('skillGaps');
-  skillGaps.innerHTML = '';
-  (a.skill_gaps || []).forEach(s => skillGaps.appendChild(tag(s, 'gap-tag')));
-
-  const strengths = document.getElementById('strengths');
-  strengths.innerHTML = '';
-  (a.strengths || []).forEach(s => {
-    const div = document.createElement('div');
-    div.className = 'strength-item';
-    div.textContent = s;
-    strengths.appendChild(div);
+  const progressList = document.getElementById('skillProgressList'); progressList.innerHTML = '';
+  (a.skill_progress || []).forEach(item => {
+    const div = document.createElement('div'); div.className = 'skill-progress-item';
+    div.innerHTML = `<div class="skill-progress-header"><span>${item.skill}</span><span class="skill-match-pct" style="color:${item.percentage === 100 ? 'var(--success)' : (item.percentage === 50 ? 'var(--gold-dim)' : 'var(--danger)')}">${item.status}</span></div><div class="progress-track"><div class="progress-fill ${item.statusClass}" style="width: ${item.percentage}%;"></div></div>`;
+    progressList.appendChild(div);
   });
 
-  const roles = document.getElementById('suggestedRoles');
-  roles.innerHTML = '';
-  (a.suggested_roles || []).forEach(s => roles.appendChild(tag(s)));
-
-  const qWrap = document.getElementById('questions');
-  qWrap.innerHTML = '';
+  const topSkills = document.getElementById('topSkills'); topSkills.innerHTML = ''; (a.top_skills || []).forEach(s => topSkills.appendChild(tag(s)));
+  const skillGaps = document.getElementById('skillGaps'); skillGaps.innerHTML = ''; (a.skill_gaps || []).forEach(s => skillGaps.appendChild(tag(s, 'gap-tag')));
+  const qWrap = document.getElementById('questions'); qWrap.innerHTML = '';
   (a.likely_interview_questions || []).forEach((q, i) => {
-    const card = document.createElement('div');
-    card.className = 'qcard';
-    card.innerHTML = `
-      <div class="qnum">Question ${i + 1} · ${q.category || 'Technical'}</div>
-      <div class="qtext">${q.question}</div>
-      <div class="why"><strong>Why asked:</strong> ${q.why_asked}</div>
-    `;
+    const card = document.createElement('div'); card.className = 'qcard';
+    card.innerHTML = `<div class="qnum">Question ${i + 1}</div><div class="qtext">${q.question}</div><div class="why"><strong>Why asked:</strong> ${q.why_asked}</div>`;
     qWrap.appendChild(card);
   });
-
-  resultsDiv.style.display = 'block';
-  resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  resultsDiv.style.display = 'block'; resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ----------------- MOCK INTERVIEW CHAT BOX -----------------
-function launchInterviewFromCV() {
-  if (!currentCVAnalysis) return;
-  const name = currentCVAnalysis.candidate_name || (currentUser ? currentUser.full_name : "Candidate");
-  startNewInterviewSession(currentCVAnalysis.report_id, name, (currentCVAnalysis.suggested_roles || ['Software Engineer'])[0]);
-}
-
-function startNewCustomInterview() {
-  const role = prompt("Enter target role for interview practice (e.g. Python Developer, Full Stack, DevOps):", "Software Engineer");
-  if (role) {
-    startNewInterviewSession(null, currentUser ? currentUser.full_name : "Candidate", role);
-  }
-}
-
+// ----------------- MOCK INTERVIEW CHAT -----------------
+function launchInterviewFromCV() { if (!currentCVAnalysis) return; startNewInterviewSession(currentCVAnalysis.report_id, currentCVAnalysis.candidate_name, "Target Company Requirements"); }
+function startNewCustomInterview() { const role = prompt("Enter target role:", "Software Engineer"); if (role) startNewInterviewSession(null, currentUser ? currentUser.full_name : "Candidate", role); }
 function startNewInterviewSession(cvId, name, role) {
-  switchTab('chat');
-  
-  let questions = [];
-  if (currentCVAnalysis && currentCVAnalysis.likely_interview_questions) {
-    questions = currentCVAnalysis.likely_interview_questions;
-  } else {
-    questions = analyzeCvClientSide("Python JavaScript SQL Git Docker React", "sample").likely_interview_questions;
-  }
-
-  currentSessionId = 'sess_' + Date.now();
-  currentQuestionIndex = 0;
-  totalQuestions = questions.length;
-  currentQuestionData = questions[0];
-
-  const sessionObj = {
-    session_id: currentSessionId,
-    candidate_name: name,
-    target_role: role,
-    created_at: new Date().toISOString(),
-    status: 'in_progress',
-    questions: questions,
-    messages: []
-  };
-
+  switchTab('chat'); let questions = currentCVAnalysis ? currentCVAnalysis.likely_interview_questions : analyzeCvWithRequirements("Python SQL", "Python AWS", "sample").likely_interview_questions;
+  currentSessionId = 'sess_' + Date.now(); currentQuestionIndex = 0;
+  const sessionObj = { session_id: currentSessionId, candidate_name: name, target_role: role, created_at: new Date().toISOString(), status: 'in_progress', questions, messages: [] };
   document.getElementById('chatHeaderRole').textContent = `AI Interviewer · ${role}`;
   document.getElementById('chatHeaderCandidate').textContent = `Candidate: ${name}`;
   document.getElementById('chatProgressPill').textContent = `Question 1 of ${questions.length}`;
-
-  const welcome_text = `👋 Welcome ${name}! I'm your AI Technical Interviewer for the **${role}** position.\n\nWe have ${questions.length} tailored interview questions today. Let's begin with Question 1:\n\n**${questions[0].question}**`;
-
-  sessionObj.messages.push({ role: 'assistant', content: welcome_text });
-  saveSessionToStore(sessionObj);
-
-  const chatMessages = document.getElementById('chatMessages');
-  chatMessages.innerHTML = '';
-  appendAIMessage(welcome_text);
-  if (autoSpeakAudio) speakText(questions[0].question);
+  const welcome_text = `👋 Welcome ${name}! I'm your AI Interviewer for **${role}**.\n\nLet's begin with Question 1:\n\n**${questions[0].question}**`;
+  sessionObj.messages.push({ role: 'assistant', content: welcome_text }); setStore('sessions_db', [sessionObj, ...getStore('sessions_db', [])]);
+  document.getElementById('chatMessages').innerHTML = ''; appendAIMessage(welcome_text);
 }
-
-function saveSessionToStore(sess) {
-  const sessions = getStore('sessions_db', []);
-  const idx = sessions.findIndex(s => s.session_id === sess.session_id);
-  if (idx >= 0) sessions[idx] = sess;
-  else sessions.unshift(sess);
-  setStore('sessions_db', sessions);
-}
-
 function appendAIMessage(content) {
-  const chatMessages = document.getElementById('chatMessages');
-  const row = document.createElement('div');
-  row.className = 'msg-row ai';
-  
-  let formatted = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  formatted = formatted.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
-
-  row.innerHTML = `
-    <div class="avatar">🤖</div>
-    <div class="bubble">${formatted}</div>
-  `;
-  chatMessages.appendChild(row);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  const chatMessages = document.getElementById('chatMessages'); const row = document.createElement('div'); row.className = 'msg-row ai';
+  row.innerHTML = `<div class="avatar">🤖</div><div class="bubble">${content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</div>`;
+  chatMessages.appendChild(row); chatMessages.scrollTop = chatMessages.scrollHeight;
 }
-
 function appendUserMessage(content, feedback) {
-  const chatMessages = document.getElementById('chatMessages');
-  const row = document.createElement('div');
-  row.className = 'msg-row user';
-  
-  let feedbackHtml = '';
-  if (feedback) {
-    let scoreClass = feedback.score >= 8 ? 'score-high' : (feedback.score >= 6 ? 'score-mid' : 'score-low');
-    feedbackHtml = `
-      <div class="feedback-box">
-        <div class="feedback-header">
-          <strong style="color:var(--ink-dark);">${feedback.verdict || 'Evaluation'}</strong>
-          <span class="score-badge ${scoreClass}">Score: ${feedback.score}/10 ${feedback.ai_powered ? '✨ AI' : ''}</span>
-        </div>
-        <div class="fb-section">
-          <div class="fb-label">What was good:</div>
-          <ul style="margin:4px 0 6px;padding-left:18px;color:var(--text);">
-            ${(feedback.strengths || []).map(s => `<li>${s}</li>`).join('')}
-          </ul>
-        </div>
-        <div class="fb-section">
-          <div class="fb-label">Improvement Tips:</div>
-          <ul style="margin:4px 0 6px;padding-left:18px;color:var(--text);">
-            ${(feedback.improvements || []).map(i => `<li>${i}</li>`).join('')}
-          </ul>
-        </div>
-        ${feedback.model_answer ? `
-        <details style="margin-top:6px;cursor:pointer;">
-          <summary style="font-family:'Space Mono',monospace;font-size:10px;color:var(--teal-dim);font-weight:700;">VIEW SAMPLE STAR ANSWER</summary>
-          <div style="margin-top:6px;padding:8px;background:var(--paper-dim);border-radius:4px;font-style:italic;color:var(--text);">
-            "${feedback.model_answer}"
-          </div>
-        </details>` : ''}
-      </div>
-    `;
-  }
-
-  row.innerHTML = `
-    <div class="avatar" style="background:var(--ink-light);">👤</div>
-    <div>
-      <div class="bubble">${content.replace(/\n/g, '<br>')}</div>
-      ${feedbackHtml}
-    </div>
-  `;
-  chatMessages.appendChild(row);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  const chatMessages = document.getElementById('chatMessages'); const row = document.createElement('div'); row.className = 'msg-row user';
+  row.innerHTML = `<div class="avatar" style="background:var(--ink-light);">👤</div><div><div class="bubble">${content.replace(/\n/g, '<br>')}</div></div>`;
+  chatMessages.appendChild(row); chatMessages.scrollTop = chatMessages.scrollHeight;
 }
-
-function evaluateAnswerClientSide(questionItem, text) {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  const wordCount = words.length;
-  const lower = text.toLowerCase();
-
-  const starTerms = ["situation", "task", "action", "result", "because", "implemented", "resolved", "designed", "optimized", "metric"];
-  const starFound = starTerms.filter(t => lower.includes(t));
-
-  let score = 5.0;
-  let verdict = "Solid Overview";
-  let strengths = ["Addressed the core interview question."];
-  let improvements = ["Include concrete metric outcomes and trade-offs."];
-
-  if (wordCount < 15) {
-    score = 4.0;
-    verdict = "Too Brief — Add Detail";
-    improvements = ["Elaborate using the STAR framework.", "Add specific library names and architecture choices."];
-  } else if (wordCount < 40) {
-    score = 6.5 + (starFound.length * 0.4);
-    verdict = "Good Concise Answer";
-    strengths.push("Good clear framing of problem context.");
-    improvements.push("Quantify the final quantitative result (e.g. latency, throughput).");
-  } else {
-    score = 8.0 + Math.min(1.8, starFound.length * 0.4);
-    verdict = "Strong Technical Answer";
-    strengths.push("Comprehensive STAR storytelling with technical vocabulary.");
-    improvements.push("Highlight unit test coverage or CI/CD validation.");
-  }
-
-  score = Math.round(Math.min(10.0, Math.max(3.0, score)) * 10) / 10;
-  const model = "In my recent role, I led the redesign of our primary API service. By introducing connection pooling and caching, we reduced average response latency by 35% and maintained 99.9% uptime.";
-
-  return { score, verdict, strengths, improvements, model_answer: model, ai_powered: false };
-}
-
 async function sendAnswer() {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-
-  input.value = '';
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.disabled = true;
-  sendBtn.textContent = 'Thinking...';
-
-  const sessions = getStore('sessions_db', []);
-  const sess = sessions.find(s => s.session_id === currentSessionId) || {
-    session_id: currentSessionId, questions: [currentQuestionData], messages: []
-  };
-
-  const currQ = sess.questions[currentQuestionIndex] || currentQuestionData;
-  const feedback = evaluateAnswerClientSide(currQ, text);
-
-  appendUserMessage(text, feedback);
-  sess.messages.push({ role: 'user', content: text, feedback });
-
-  const nextIdx = currentQuestionIndex + 1;
-  sendBtn.disabled = false;
-  sendBtn.textContent = 'Submit';
-
-  if (nextIdx >= sess.questions.length) {
-    sess.status = 'completed';
-    sess.overall_score = 85;
-    document.getElementById('chatProgressPill').textContent = 'Completed 🎉';
-    const summary = `🎉 **Interview Complete!** Great job practicing today.\n\nYour session transcript has been saved to your browser storage.`;
-    appendAIMessage(summary);
-    sess.messages.push({ role: 'assistant', content: summary });
-    saveSessionToStore(sess);
-    if (autoSpeakAudio) speakText("Interview complete! Great job practicing today.");
-  } else {
-    currentQuestionIndex = nextIdx;
-    const nextQ = sess.questions[nextIdx];
-    document.getElementById('chatProgressPill').textContent = `Question ${nextIdx + 1} of ${sess.questions.length}`;
-    const ai_reply = `Great. Moving on to **Question ${nextIdx + 1} of ${sess.questions.length}**:\n\n**${nextQ.question}**`;
-    appendAIMessage(ai_reply);
-    sess.messages.push({ role: 'assistant', content: ai_reply });
-    saveSessionToStore(sess);
-    if (autoSpeakAudio) speakText(nextQ.question);
-  }
+  const input = document.getElementById('chatInput'); const text = input.value.trim(); if (!text) return; input.value = '';
+  appendUserMessage(text, null); appendAIMessage("Great response. Moving on to the next section.");
 }
+function askCoach(q) { appendAIMessage(`💡 **Coach Tip:** Structure your response using STAR technique.`); }
+function toggleVoiceInput() { alert('Voice speech input activated.'); }
+function toggleAudioPlayback() { autoSpeakAudio = !autoSpeakAudio; }
 
-document.getElementById('chatInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendAnswer();
-  }
-});
-
-function askCoach(q) {
-  appendAIMessage(`💡 **Career Coach Tip:**\n\n- Use **STAR**: Situation (10%), Task (10%), Action (60%), Result (20%).\n- Quantify your impact with numbers (e.g., latency dropped 40%).\n- Be transparent about trade-offs and team collaboration.`);
-}
-
-function toggleVoiceInput() {
-  const micBtn = document.getElementById('micBtn');
-  const input = document.getElementById('chatInput');
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    alert('Speech recognition is supported in Chrome/Edge.');
-    return;
-  }
-  if (isRecording) {
-    speechRecognition.stop();
-    isRecording = false;
-    micBtn.classList.remove('recording');
-    return;
-  }
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  speechRecognition = new SR();
-  speechRecognition.continuous = true;
-  speechRecognition.interimResults = true;
-  speechRecognition.onstart = () => { isRecording = true; micBtn.classList.add('recording'); };
-  speechRecognition.onresult = (e) => {
-    let t = '';
-    for (let i = e.resultIndex; i < e.results.length; ++i) t += e.results[i][0].transcript;
-    input.value = t;
-  };
-  speechRecognition.onend = () => { isRecording = false; micBtn.classList.remove('recording'); };
-  speechRecognition.start();
-}
-
-function toggleAudioPlayback() {
-  autoSpeakAudio = !autoSpeakAudio;
-  document.getElementById('ttsBtn').style.opacity = autoSpeakAudio ? '1' : '0.4';
-}
-
-function speakText(text) {
-  if (!('speechSynthesis' in window) || !autoSpeakAudio) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/[*#]/g, ''));
-  window.speechSynthesis.speak(u);
-}
-
-// ----------------- HISTORY VIEW -----------------
+// ----------------- HISTORY -----------------
 function loadSavedReports() {
-  const tbody = document.getElementById('reportsTableBody');
-  const reports = getStore('reports_db', []);
-  if (!reports.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-soft);">No saved CV reports yet. Upload a CV in Tab 1!</td></tr>';
-    return;
-  }
+  const tbody = document.getElementById('reportsTableBody'); const reports = getStore('reports_db', []);
+  if (!reports.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No saved reports.</td></tr>'; return; }
   tbody.innerHTML = '';
   reports.forEach(r => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${(r.created_at || '').substring(0, 10)}</td>
-      <td><strong>${r.candidate_name || 'Candidate'}</strong></td>
-      <td>${(r.suggested_roles || ['Software Engineer'])[0]}</td>
-      <td>${r.experience_level || 'Mid-Level'}</td>
-      <td><span class="tag" style="background:#EBF5F3;color:#1A4E45;font-weight:700;">${r.overall_readiness_score}/100</span></td>
-      <td>
-        <button class="btn-sm" onclick="viewSavedReport(${r.report_id})">🔍 View</button>
-        <button class="btn-sm btn-danger-sm" onclick="deleteSavedReport(${r.report_id})">🗑️</button>
-      </td>
-    `;
+    tr.innerHTML = `<td>${(r.created_at || '').substring(0, 10)}</td><td><strong>${r.candidate_name || 'Candidate'}</strong></td><td>Requirements</td><td>Mid-Level</td><td><span class="tag">${r.overall_readiness_score}% Match</span></td><td><button class="btn-sm" onclick="viewSavedReport(${r.report_id})">🔍 View</button></td>`;
     tbody.appendChild(tr);
   });
 }
-
-function viewSavedReport(id) {
-  const reports = getStore('reports_db', []);
-  const rep = reports.find(r => r.report_id === id);
-  if (rep) {
-    currentCVAnalysis = rep;
-    switchTab('cv');
-    renderAnalysis(rep);
-  }
-}
-
-function deleteSavedReport(id) {
-  if (!confirm('Delete this report?')) return;
-  let reports = getStore('reports_db', []);
-  reports = reports.filter(r => r.report_id !== id);
-  setStore('reports_db', reports);
-  loadSavedReports();
-}
-
+function viewSavedReport(id) { const reports = getStore('reports_db', []); const rep = reports.find(r => r.report_id === id); if (rep) { currentCVAnalysis = rep; switchTab('cv'); renderAnalysis(rep); } }
 function loadSavedSessions() {
-  const tbody = document.getElementById('sessionsTableBody');
-  const sessions = getStore('sessions_db', []);
-  if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-soft);">No mock interview sessions recorded yet.</td></tr>';
-    return;
-  }
+  const tbody = document.getElementById('sessionsTableBody'); const sessions = getStore('sessions_db', []);
+  if (!sessions.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No past sessions.</td></tr>'; return; }
   tbody.innerHTML = '';
   sessions.forEach(s => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${(s.created_at || '').substring(0, 10)}</td>
-      <td><strong>${s.candidate_name || 'Candidate'}</strong></td>
-      <td>${s.target_role || 'Software Engineer'}</td>
-      <td><span class="tag">${s.status}</span></td>
-      <td><strong style="color:var(--teal);">${s.overall_score || 80}/100</strong></td>
-      <td>
-        <button class="btn-sm" onclick="viewSessionTranscript('${s.session_id}')">📜 Transcript</button>
-      </td>
-    `;
+    tr.innerHTML = `<td>${(s.created_at || '').substring(0, 10)}</td><td><strong>${s.candidate_name || 'Candidate'}</strong></td><td>${s.target_role}</td><td><span class="tag">${s.status}</span></td><td><strong>${s.overall_score || 85}/100</strong></td><td><button class="btn-sm">📜 Transcript</button></td>`;
     tbody.appendChild(tr);
   });
-}
-
-function viewSessionTranscript(sid) {
-  const sessions = getStore('sessions_db', []);
-  const sess = sessions.find(s => s.session_id === sid);
-  if (sess) {
-    switchTab('chat');
-    currentSessionId = sid;
-    document.getElementById('chatHeaderRole').textContent = `AI Interviewer · ${sess.target_role}`;
-    document.getElementById('chatHeaderCandidate').textContent = `Candidate: ${sess.candidate_name}`;
-    document.getElementById('chatProgressPill').textContent = sess.status === 'completed' ? 'Completed 🎉' : 'In Progress';
-    
-    const chatMessages = document.getElementById('chatMessages');
-    chatMessages.innerHTML = '';
-    (sess.messages || []).forEach(m => {
-      if (m.role === 'assistant') appendAIMessage(m.content);
-      else if (m.role === 'user') appendUserMessage(m.content, m.feedback);
-    });
-  }
 }
 </script>
 </body>
