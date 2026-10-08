@@ -4,6 +4,7 @@ echo ======================================================
 echo Launching AI Interview Preparation Portal...
 echo ======================================================
 cd /d "%~dp0"
+
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Python is not installed or not added to PATH.
@@ -11,9 +12,12 @@ if %errorlevel% neq 0 (
     pause
     exit /b
 )
+
 echo Installing / checking dependencies...
 pip install -r requirements.txt
+
 echo.
 echo Starting Standalone Portal...
 python run_standalone.py
 pause
+
