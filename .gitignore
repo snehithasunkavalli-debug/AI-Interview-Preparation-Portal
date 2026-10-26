@@ -1,0 +1,27 @@
+# Python Virtual Environment (Do not push to Git!)
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local database and uploads
+storage/portal.db
+storage/uploads/
+
+# Environment files
+.env
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+scratch/
+
+data/Resume.csv
