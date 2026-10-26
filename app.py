@@ -16,7 +16,10 @@ from datetime import timedelta
 import traceback
 from flask import Flask, request, jsonify, send_from_directory, send_file, session, g
 from werkzeug.security import generate_password_hash, check_password_hash
-import pdfplumber
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
 
 try:
     from pypdf import PdfReader
@@ -38,19 +41,60 @@ except ImportError:
 
 from dotenv import load_dotenv
 load_dotenv()
-
+ 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STORAGE_DIR = os.environ.get("STORAGE_DIR", os.path.join(BASE_DIR, "storage"))
+
+# Detect Vercel Serverless Runtime and Production Environment
+IS_VERCEL = bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+IS_PRODUCTION = IS_VERCEL or os.environ.get("FLASK_ENV") == "production" or os.environ.get("ENV") == "production"
+
+# Configure writable temporary directory on Vercel
+if IS_VERCEL:
+    DEFAULT_STORAGE = "/tmp/storage"
+else:
+    DEFAULT_STORAGE = os.path.join(BASE_DIR, "storage")
+
+STORAGE_DIR = os.environ.get("STORAGE_DIR", DEFAULT_STORAGE)
 UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 DB_PATH = os.path.join(STORAGE_DIR, "portal.db")
 
-os.makedirs(UPLOADS_DIR, exist_ok=True)
+try:
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+except OSError:
+    # If default directory is read-only, safely fallback to /tmp
+    STORAGE_DIR = "/tmp/storage"
+    UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
+    DB_PATH = os.path.join(STORAGE_DIR, "portal.db")
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder=".", static_url_path="")
-app.secret_key = os.environ.get("SECRET_KEY", "dossier_secure_secret_key_admin_2026")
+
+# Require a strong SECRET_KEY in production; reject insecure defaults
+raw_secret = os.environ.get("SECRET_KEY")
+INSECURE_SECRET_FALLBACKS = {
+    "dossier_secure_secret_key_admin_2026",
+    "dossier_secure_secret_key_standalone_2026",
+    "secret",
+    "changeme",
+    "password",
+    "default"
+}
+
+if IS_PRODUCTION:
+    if not raw_secret or raw_secret.strip() in INSECURE_SECRET_FALLBACKS or len(raw_secret.strip()) < 16:
+        raise RuntimeError(
+            "CRITICAL SECURITY CONFIGURATION ERROR: A strong, unique SECRET_KEY environment variable "
+            "(minimum 16 characters) is required in production! "
+            "Please configure SECRET_KEY in your Vercel Project Settings -> Environment Variables."
+        )
+    app.secret_key = raw_secret.strip()
+else:
+    # Local development mode: allow local key with clear developer notice
+    app.secret_key = raw_secret or "dossier_local_dev_key_only_not_for_prod"
+
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None' if os.environ.get("HTTPS") else 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = True if os.environ.get("HTTPS") else False
+app.config['SESSION_COOKIE_SAMESITE'] = 'None' if (os.environ.get("HTTPS") or IS_VERCEL) else 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True if (os.environ.get("HTTPS") or IS_VERCEL) else False
 # Session expires on browser close and 15-minute inactivity
 app.config['SESSION_PERMANENT'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
@@ -146,6 +190,7 @@ def close_db(exception):
 
 def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -225,16 +270,35 @@ def init_db():
     );
     """)
 
-    # Seed Admin User: username='admin', password='aiint'
-    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
-    admin_user = cursor.fetchone()
-    if not admin_user:
-        admin_pwd_hash = generate_password_hash("aiint")
+    # Secure Administrator Provisioning
+    admin_username = os.environ.get("ADMIN_USERNAME", "admin").strip()
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@dossier.portal").strip()
+
+    cursor.execute("SELECT id FROM users WHERE username = ?", (admin_username,))
+    existing_admin = cursor.fetchone()
+
+    if admin_password and admin_password.strip():
+        pwd_hash = generate_password_hash(admin_password.strip())
+        if existing_admin:
+            cursor.execute("UPDATE users SET password_hash = ?, is_admin = 1 WHERE id = ?", (pwd_hash, existing_admin[0]))
+            print(f"[*] Admin user '{admin_username}' credentials synchronized from environment.")
+        else:
+            cursor.execute("""
+            INSERT INTO users (username, email, password_hash, full_name, is_admin)
+            VALUES (?, ?, ?, 'Portal Administrator', 1)
+            """, (admin_username, admin_email, pwd_hash))
+            print(f"[*] Secure admin user '{admin_username}' provisioned from environment variable.")
+    elif not IS_PRODUCTION and not existing_admin:
+        # Local development mode: seed dev credentials for out-of-the-box local testing
+        dev_pwd = os.environ.get("DEV_ADMIN_PASSWORD", "aiint")
         cursor.execute("""
         INSERT INTO users (username, email, password_hash, full_name, is_admin)
-        VALUES ('admin', 'admin@dossier.portal', ?, 'Portal Administrator', 1)
-        """, (admin_pwd_hash,))
-        print("[*] Admin account created: username='admin', password='aiint'")
+        VALUES ('admin', 'admin@dossier.portal', ?, 'Portal Administrator (Local Dev)', 1)
+        """, (generate_password_hash(dev_pwd),))
+        print("[*] [LOCAL DEV] Seeded local admin account. (Note: In production, configure ADMIN_PASSWORD).")
+    elif IS_PRODUCTION and not existing_admin:
+        print("[!] [PRODUCTION NOTICE] No ADMIN_PASSWORD provided. Default insecure admin creation was skipped for security.")
 
     conn.commit()
     conn.close()
@@ -818,6 +882,10 @@ def health():
         "public_ready": True,
         "auto_logout_on_close": True,
         "session_timeout_minutes": 15,
+        "environment": "vercel_serverless" if IS_VERCEL else "standalone",
+        "storage_mode": "ephemeral_tmp" if IS_VERCEL else "local_disk",
+        "is_ephemeral": IS_VERCEL,
+        "database_path": DB_PATH,
         "gemini_live_llm": bool(get_setting("GEMINI_API_KEY")),
         "resume_classifier_loaded": classifier_pipeline is not None,
         "resume_classifier_error": classifier_load_error if classifier_pipeline is None else None

@@ -1,0 +1,38 @@
+# Large datasets & raw data (trained model is in models/resume_classifier.joblib)
+data/
+data/Resume.csv
+*.csv
+
+# Local database and uploads
+storage/
+storage/portal.db
+storage/uploads/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.cache/
+
+# Local scratch and temporary scripts
+scratch/
+test_*.py
+verify_*.py
+inspect_*.py
+
+# Local development / startup scripts
+*.bat
+*.vbs
+
+# Reports and generation artifacts
+create_report_docx.py
+PROJECT_REPORT.md
+
+# Virtual environments & local env secrets
+.env
+.env.local
+.env.*.local
+.venv/
+venv/
+ENV/
+env/
