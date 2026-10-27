@@ -165,6 +165,113 @@ Evaluation results are saved to:
 
 Training may overwrite the existing model and evaluation results. Back up these files before retraining if you need to preserve the current evaluation.
 
+## Persistent Cloud Database Configuration (PostgreSQL on Neon or Supabase)
+
+### Why SQLite fails on Vercel
+On Vercel and similar serverless platforms, execution environments run in stateless Lambda containers. The writable partition (`/tmp`) is ephemeral and wiped upon function cold starts, container recycling, or new deployments. If SQLite is stored in `/tmp/storage/portal.db`, user registrations and login credentials will disappear between sessions ("Invalid credentials" error).
+
+To achieve persistent user authentication, session data, and CV reports, connect a managed PostgreSQL instance such as **Neon** or **Supabase**.
+
+### 1. Create a Managed PostgreSQL Database (Free Tier)
+
+#### Option A: Neon (Recommended for serverless)
+1. Sign up at [neon.tech](https://neon.tech).
+2. Create a new project (e.g. `dossier-portal-db`).
+3. Under **Dashboard -> Connection Details**, copy the PostgreSQL connection string:
+   ```text
+   postgresql://[user]:[password]@[ep-host].neon.tech/neondb?sslmode=require
+   ```
+
+#### Option B: Supabase
+1. Sign up at [supabase.com](https://supabase.com).
+2. Create a new project.
+3. Under **Project Settings -> Database -> Connection string**, copy the URI (choose **Transaction Pooler** for serverless environments):
+   ```text
+   postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?sslmode=require
+   ```
+
+### 2. Configure Environment Variables
+
+#### In Local Development
+Add the following to your local `.env` file:
+```env
+DATABASE_URL=postgresql://user:password@ep-host.neon.tech/neondb?sslmode=require
+SECRET_KEY=your_generated_32_character_secret_key_here
+ADMIN_PASSWORD=your_secure_admin_password_here
+```
+
+#### In Vercel Project Settings
+1. Open your Vercel Project dashboard.
+2. Navigate to **Settings -> Environment Variables**.
+3. Add the following variables:
+   - `DATABASE_URL`: Your PostgreSQL connection string with `?sslmode=require`.
+   - `SECRET_KEY`: A strong, random string (minimum 16 characters).
+   - `ADMIN_PASSWORD`: A strong password for the `admin` account.
+   - `ADMIN_USERNAME`: `admin` (or your chosen admin username).
+   - `ADMIN_EMAIL`: `admin@dossier.portal`
+   - `GEMINI_API_KEY`: *(Optional)* Your Google Gemini API key.
+
+### 3. Migrate Existing Local Data to PostgreSQL
+If you have existing candidate accounts and CV reports in local SQLite (`storage/portal.db`), run the automated migration script:
+
+```bash
+python migrate_sqlite_to_pg.py --url "postgresql://user:password@ep-host.neon.tech/neondb?sslmode=require"
+```
+
+The migration tool:
+- Automatically initializes all tables, schema migrations, foreign keys, and indexes.
+- Transfers existing user accounts while preserving exact password hashes (`scrypt`/`pbkdf2`).
+- Transfers all CV reports and interview sessions.
+- Automatically synchronizes auto-increment primary key sequences (`users_id_seq`, `cv_reports_id_seq`).
+- Verifies record counts across both databases upon completion.
+
+### 4. Verify Database Persistence via Health Endpoint
+After deployment, verify that persistence is active by checking the health endpoint:
+
+```text
+GET https://your-project.vercel.app/api/health
+```
+
+Expected response when persistent PostgreSQL is configured:
+```json
+{
+  "status": "online",
+  "database_type": "postgresql",
+  "database_configured": true,
+  "persistent_database": true,
+  "storage_mode": "persistent_cloud_postgres",
+  "is_ephemeral": false,
+  "database_connected": true
+}
+```
+
+If `DATABASE_URL` is unset in production, the portal blocks ephemeral SQLite and reports:
+```json
+{
+  "database_type": "none",
+  "database_configured": false,
+  "persistent_database": false,
+  "storage_mode": "unconfigured_persistent_db",
+  "is_ephemeral": false,
+  "error": "DATABASE_URL is not configured in production..."
+}
+```
+
+## Vercel Deployment
+
+Deploy the application to Vercel with serverless Python runtime support:
+
+```bash
+git add .
+git commit -m "Configure persistent PostgreSQL, secure credentials, and Vercel routing"
+git push origin main
+```
+
+If using the Vercel CLI:
+```bash
+vercel --prod
+```
+
 ## GitHub Pages Hosting
 
 GitHub Pages is a static website hosting service. It serves HTML, CSS, JavaScript, images, and other static assets. **It does not execute Python, run Flask or Waitress, or provide a Python backend.**

@@ -9,6 +9,7 @@ import json
 import re
 import uuid
 import sqlite3
+import database
 import datetime
 import math
 from collections import Counter
@@ -175,149 +176,50 @@ def predict_resume_category(cv_text: str):
             "error": f"Prediction failed during inference: {str(e)}"
         }
 
-# Database Setup & Migrations
+# Database Setup & Connection Lifecycle (Delegated to database.py)
 def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect(DB_PATH, timeout=10)
-        g.db.row_factory = sqlite3.Row
+    if 'db' not in g or g.db.is_closed:
+        g.db = database.create_connection()
     return g.db
 
 @app.teardown_appcontext
 def close_db(exception):
     db = g.pop('db', None)
     if db is not None:
+        if exception:
+            db.rollback()
         db.close()
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        full_name TEXT,
-        login_count INTEGER DEFAULT 1,
-        has_rated INTEGER DEFAULT 0,
-        rating INTEGER DEFAULT 0,
-        rating_comment TEXT,
-        rated_at TIMESTAMP,
-        is_banned INTEGER DEFAULT 0,
-        is_admin INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
+    return database.init_db(allow_unconfigured_in_prod=True)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS cv_reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        filename TEXT NOT NULL,
-        saved_filepath TEXT NOT NULL,
-        candidate_name TEXT,
-        candidate_email TEXT,
-        candidate_phone TEXT,
-        experience_level TEXT,
-        years_exp REAL,
-        readiness_score INTEGER,
-        target_role TEXT,
-        analysis_json TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    );
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS interview_sessions (
-        session_id TEXT PRIMARY KEY,
-        user_id INTEGER,
-        cv_id INTEGER,
-        candidate_name TEXT,
-        target_role TEXT,
-        status TEXT DEFAULT 'in_progress',
-        total_questions INTEGER DEFAULT 5,
-        current_question_index INTEGER DEFAULT 0,
-        overall_score REAL DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP,
-        questions_json TEXT,
-        FOREIGN KEY(user_id) REFERENCES users(id),
-        FOREIGN KEY(cv_id) REFERENCES cv_reports(id)
-    );
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS interview_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        question_index INTEGER,
-        content TEXT NOT NULL,
-        feedback_json TEXT,
-        score REAL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(session_id) REFERENCES interview_sessions(session_id)
-    );
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS app_settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );
-    """)
-
-    # Secure Administrator Provisioning
-    admin_username = os.environ.get("ADMIN_USERNAME", "admin").strip()
-    admin_password = os.environ.get("ADMIN_PASSWORD")
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@dossier.portal").strip()
-
-    cursor.execute("SELECT id FROM users WHERE username = ?", (admin_username,))
-    existing_admin = cursor.fetchone()
-
-    if admin_password and admin_password.strip():
-        pwd_hash = generate_password_hash(admin_password.strip())
-        if existing_admin:
-            cursor.execute("UPDATE users SET password_hash = ?, is_admin = 1 WHERE id = ?", (pwd_hash, existing_admin[0]))
-            print(f"[*] Admin user '{admin_username}' credentials synchronized from environment.")
-        else:
-            cursor.execute("""
-            INSERT INTO users (username, email, password_hash, full_name, is_admin)
-            VALUES (?, ?, ?, 'Portal Administrator', 1)
-            """, (admin_username, admin_email, pwd_hash))
-            print(f"[*] Secure admin user '{admin_username}' provisioned from environment variable.")
-    elif not IS_PRODUCTION and not existing_admin:
-        # Local development mode: seed dev credentials for out-of-the-box local testing
-        dev_pwd = os.environ.get("DEV_ADMIN_PASSWORD", "aiint")
-        cursor.execute("""
-        INSERT INTO users (username, email, password_hash, full_name, is_admin)
-        VALUES ('admin', 'admin@dossier.portal', ?, 'Portal Administrator (Local Dev)', 1)
-        """, (generate_password_hash(dev_pwd),))
-        print("[*] [LOCAL DEV] Seeded local admin account. (Note: In production, configure ADMIN_PASSWORD).")
-    elif IS_PRODUCTION and not existing_admin:
-        print("[!] [PRODUCTION NOTICE] No ADMIN_PASSWORD provided. Default insecure admin creation was skipped for security.")
-
-    conn.commit()
-    conn.close()
-
-init_db()
+# Run safe schema initialization at application startup
+try:
+    db_init_status = init_db()
+    if not db_init_status.get("success"):
+        print(f"[!] Database startup notice: {db_init_status.get('error')}")
+except Exception as e:
+    print(f"[!] Database initialization exception on startup: {e}")
 
 def get_setting(key, default=""):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
-    row = cursor.fetchone()
-    if row:
-        return row["value"]
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        if row:
+            return row["value"]
+    except Exception:
+        pass
     return os.environ.get(key, default)
 
 def set_setting(key, value):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (key, value))
+    cursor.execute("""
+    INSERT INTO app_settings (key, value) VALUES (?, ?)
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    """, (key, value))
     conn.commit()
 
 def get_current_user():
@@ -877,15 +779,22 @@ def index():
 
 @app.route("/api/health")
 def health():
+    db_health = database.get_db_health()
     return jsonify({
         "status": "online",
         "public_ready": True,
         "auto_logout_on_close": True,
         "session_timeout_minutes": 15,
         "environment": "vercel_serverless" if IS_VERCEL else "standalone",
-        "storage_mode": "ephemeral_tmp" if IS_VERCEL else "local_disk",
-        "is_ephemeral": IS_VERCEL,
-        "database_path": DB_PATH,
+        "database_type": db_health["database_type"],
+        "database_configured": db_health["database_configured"],
+        "persistent_database": db_health["persistent_database"],
+        "storage_mode": db_health["storage_mode"],
+        "is_ephemeral": False,
+        "database_connected": db_health["connected"],
+        "database_error": db_health.get("error"),
+        "database_host": db_health.get("database_host"),
+        "database_path": db_health.get("database_path"),
         "gemini_live_llm": bool(get_setting("GEMINI_API_KEY")),
         "resume_classifier_loaded": classifier_pipeline is not None,
         "resume_classifier_error": classifier_load_error if classifier_pipeline is None else None
@@ -924,9 +833,10 @@ def auth_register():
     pwd_hash = generate_password_hash(password)
     cursor.execute("""
     INSERT INTO users (username, email, password_hash, full_name, login_count) 
-    VALUES (?, ?, ?, ?, 1)
+    VALUES (?, ?, ?, ?, 1) RETURNING id
     """, (username, email, pwd_hash, full_name))
-    user_id = cursor.lastrowid
+    row = cursor.fetchone()
+    user_id = row[0] if row else cursor.lastrowid
     conn.commit()
 
     session.permanent = False
@@ -950,7 +860,7 @@ def auth_login():
     user = cursor.fetchone()
 
     if not user or not check_password_hash(user["password_hash"], password):
-        return jsonify({"error": "Invalid credentials. For Admin use username: admin, password: aiint"}), 401
+        return jsonify({"error": "Invalid credentials."}), 401
 
     if login_type == "admin" and not user["is_admin"]:
         return jsonify({"error": "Access Denied. Account does not have Administrator privileges."}), 403
@@ -1034,17 +944,17 @@ def api_cv_analyze():
     analysis["category_confidence"] = category_result.get("confidence")
     analysis["category_classification"] = category_result
     
-    # Save into SQLite cv_reports
+    # Save into cv_reports
     user_id = user.get("id") if user else None
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
     INSERT INTO cv_reports (user_id, filename, saved_filepath, candidate_name, readiness_score, target_role, analysis_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
     """, (user_id, filename, filename, candidate_name, analysis["overall_readiness_score"], "Target Company Requirements", json.dumps(analysis)))
-    report_id = cursor.lastrowid
+    row = cursor.fetchone()
+    report_id = row[0] if row else cursor.lastrowid
     conn.commit()
-    conn.close()
     
     analysis["report_id"] = report_id
     return jsonify({"success": True, "analysis": analysis})
@@ -1084,7 +994,6 @@ def get_saved_reports():
         
     rows = cursor.fetchall()
     reports = [dict(r) for r in rows]
-    conn.close()
     return jsonify({"success": True, "reports": reports, "is_admin": bool(user.get("is_admin"))})
 
 @app.route("/api/reports/<int:report_id>", methods=["GET"])
@@ -1102,7 +1011,6 @@ def get_single_report(report_id):
     WHERE r.id = ?
     """, (report_id,))
     row = cursor.fetchone()
-    conn.close()
     
     if not row:
         return jsonify({"error": "Report not found."}), 404
@@ -1145,7 +1053,6 @@ def get_saved_sessions():
         
     rows = cursor.fetchall()
     sessions = [dict(s) for s in rows]
-    conn.close()
     return jsonify({"success": True, "sessions": sessions, "is_admin": bool(user.get("is_admin"))})
 
 # -----------------------------
@@ -1343,6 +1250,17 @@ def admin_ban_user():
 
     action = "banned" if ban_status else "unbanned"
     return jsonify({"success": True, "message": f"User successfully {action}."})
+
+@app.errorhandler(RuntimeError)
+def handle_runtime_error(e):
+    err_msg = str(e)
+    if "DATABASE_URL" in err_msg or "PERSISTENCE" in err_msg or "database" in err_msg.lower():
+        return jsonify({
+            "error": "Persistent Database Not Configured",
+            "message": err_msg,
+            "status": "database_configuration_required"
+        }), 503
+    return jsonify({"error": err_msg}), 500
 
 application = app
 
