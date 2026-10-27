@@ -904,22 +904,47 @@ def submit_rating():
         return jsonify({"error": "Authentication required."}), 401
 
     if user.get("is_admin"):
-        return jsonify({"error": "Admin users cannot submit ratings."}), 400
-        
+        return jsonify({"error": "Admin users cannot submit ratings."}), 403
+
+    if user.get("is_banned"):
+        return jsonify({"error": "Your account has been suspended."}), 403
+
+    if user.get("has_rated"):
+        return jsonify({"error": "You have already submitted a rating."}), 409
+
     data = request.json or {}
-    rating = int(data.get("rating", 5))
-    rating_comment = (data.get("comment") or "").strip()
-    rating = max(1, min(5, rating))
+    raw_rating = data.get("rating")
+    if not isinstance(raw_rating, int) or isinstance(raw_rating, bool):
+        return jsonify({"error": "Rating must be an integer between 1 and 5."}), 400
+
+    rating = raw_rating
+    if rating < 1 or rating > 5:
+        return jsonify({"error": "Rating must be an integer between 1 and 5."}), 400
+
+    raw_comment = data.get("comment") if data.get("comment") is not None else data.get("rating_comment")
+    rating_comment = (raw_comment or "").strip()
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-    UPDATE users SET has_rated = 1, rating = ?, rating_comment = ?, rated_at = ? WHERE id = ?
+    UPDATE users 
+    SET has_rated = 1, rating = ?, rating_comment = ?, rated_at = ? 
+    WHERE id = ? AND (has_rated IS NULL OR has_rated = 0)
     """, (rating, rating_comment, now_str, user["id"]))
+
+    if cursor.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "You have already submitted a rating."}), 409
+
     conn.commit()
-    
-    return jsonify({"success": True, "message": "Thank you for rating!"})
+
+    return jsonify({
+        "success": True, 
+        "message": "Thank you for rating!",
+        "rating": rating,
+        "rating_comment": rating_comment
+    })
 
 @app.route("/api/cv/analyze", methods=["POST"])
 def api_cv_analyze():
@@ -1076,13 +1101,15 @@ def admin_stats():
     total_sessions = cursor.fetchone()["total_sessions"] or 0
 
     # Ratings Summary (Excludes Admin)
-    cursor.execute("SELECT rating, COUNT(*) as cnt FROM users WHERE has_rated = 1 AND is_admin = 0 GROUP BY rating")
-    ratings_raw = {row["rating"]: row["cnt"] for row in cursor.fetchall()}
+    cursor.execute("SELECT rating, COUNT(*) as cnt FROM users WHERE has_rated = 1 AND rating >= 1 AND rating <= 5 AND is_admin = 0 GROUP BY rating")
+    ratings_raw = {int(row["rating"]): int(row["cnt"]) for row in cursor.fetchall()}
     ratings_distribution = {star: ratings_raw.get(star, 0) for star in range(1, 6)}
+    total_ratings = sum(ratings_distribution.values())
     
-    cursor.execute("SELECT AVG(rating) as avg_r FROM users WHERE has_rated = 1 AND rating > 0 AND is_admin = 0")
-    avg_rating_val = cursor.fetchone()["avg_r"]
-    avg_rating = round(float(avg_rating_val), 1) if avg_rating_val else 5.0
+    cursor.execute("SELECT AVG(rating) as avg_r FROM users WHERE has_rated = 1 AND rating >= 1 AND rating <= 5 AND is_admin = 0")
+    avg_row = cursor.fetchone()
+    avg_rating_val = avg_row["avg_r"] if avg_row else None
+    avg_rating = round(float(avg_rating_val), 1) if (avg_rating_val is not None and total_ratings > 0) else None
 
     # Real Candidate Readiness & Progress from cv_reports
     cursor.execute("SELECT readiness_score, analysis_json FROM cv_reports")
@@ -1138,7 +1165,7 @@ def admin_stats():
                 "full_name": u["full_name"],
                 "rating": u["rating"],
                 "rating_comment": u["rating_comment"] or "No comment provided",
-                "rated_at": u["rated_at"] or u["created_at"]
+                "rated_at": str(u["rated_at"] or u["created_at"])
             })
 
     # Precise Continuous Growth Trend Analytics (Zero-Filled Calendar Interpolation)
@@ -1210,6 +1237,7 @@ def admin_stats():
             "suspicious_users": suspicious_count,
             "total_sessions": total_sessions,
             "total_cv_reports": total_cv_reports,
+            "total_ratings": total_ratings,
             "avg_rating": avg_rating,
             "avg_candidate_match": avg_candidate_match,
             "ratings_distribution": ratings_distribution,

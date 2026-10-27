@@ -487,6 +487,37 @@ def init_db(allow_unconfigured_in_prod=False):
         if not cursor.fetchone():
             cursor.execute("INSERT INTO schema_migrations (version) VALUES (?)", ("001_initial_schema",))
 
+        # Ensure rating columns exist in users table (safe, idempotent migration)
+        if conn.db_type == "postgresql":
+            cursor.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='has_rated') THEN
+                    ALTER TABLE users ADD COLUMN has_rated INTEGER DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='rating') THEN
+                    ALTER TABLE users ADD COLUMN rating INTEGER DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='rating_comment') THEN
+                    ALTER TABLE users ADD COLUMN rating_comment TEXT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='rated_at') THEN
+                    ALTER TABLE users ADD COLUMN rated_at TIMESTAMP;
+                END IF;
+            END $$;
+            """)
+        else:
+            cursor.execute("PRAGMA table_info(users)")
+            existing_cols = {row["name"] if hasattr(row, "__getitem__") else row[1] for row in cursor.fetchall()}
+            if "has_rated" not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN has_rated INTEGER DEFAULT 0")
+            if "rating" not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN rating INTEGER DEFAULT 0")
+            if "rating_comment" not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN rating_comment TEXT")
+            if "rated_at" not in existing_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN rated_at TIMESTAMP")
+
         # Secure Administrator Provisioning
         admin_username = os.environ.get("ADMIN_USERNAME", "admin").strip()
         admin_password = os.environ.get("ADMIN_PASSWORD")

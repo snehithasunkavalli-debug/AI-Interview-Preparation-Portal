@@ -465,6 +465,7 @@
     <button class="nav-btn active" id="authNavBtn" onclick="switchTab('auth')">🔑 Sign In</button>
     <div id="loggedInUserBadge" class="user-badge" style="display:none;">
       <span>👤 <span id="headerUserName" class="user-name">User</span></span>
+      <button id="ratePortalBtn" class="btn-sm" style="display:none;padding:4px 8px;font-size:11px;background:var(--gold-bg);font-weight:600;" onclick="openRatingModal()">⭐ Rate</button>
       <button class="btn-logout" onclick="logoutUser()">Logout</button>
     </div>
   </div>
@@ -772,6 +773,7 @@
     <div class="chart-grid">
       <div class="panel">
         <h4>⭐ Real User Rating Distribution (1 to 5 Stars)</h4>
+        <div id="noRatingsMsg" style="display:none; text-align:center; padding: 48px 16px; color:var(--text-soft); font-size:14px; font-weight:500;">No user ratings yet</div>
         <canvas id="ratingsChart" height="200"></canvas>
       </div>
       <div class="panel">
@@ -1037,6 +1039,10 @@ function setLoggedInUser(user) {
     brandBadge.textContent = 'User Portal';
 
     const loginCount = user.login_count || 1;
+    const rateBtn = document.getElementById('ratePortalBtn');
+    if (rateBtn) {
+      rateBtn.style.display = (!user.is_admin && !user.has_rated) ? 'inline-block' : 'none';
+    }
     // EXCLUDE ADMIN FROM RATINGS: Only non-admin users on 5th login prompt rating
     if (!user.is_admin && !user.has_rated && loginCount > 0 && loginCount % 5 === 0) {
       openRatingModal();
@@ -1201,7 +1207,13 @@ async function handleAuthSubmit(e) {
 // ----------------- RATING MODAL (EXCLUDES ADMIN) -----------------
 function openRatingModal() {
   if (currentUser && currentUser.is_admin) return; // Admin never gives rating!
+  if (currentUser && currentUser.has_rated) {
+    alert('You have already submitted a rating. Thank you!');
+    return;
+  }
   setStarRating(5);
+  const commentInput = document.getElementById('ratingCommentInput');
+  if (commentInput) commentInput.value = '';
   document.getElementById('ratingModal').classList.add('show');
 }
 function closeRatingModal() {
@@ -1215,24 +1227,87 @@ function setStarRating(num) {
     else s.classList.remove('active');
   });
 }
-function submitUserRating() {
-  if (currentUser && !currentUser.is_admin) {
+async function submitUserRating() {
+  if (!currentUser) {
+    alert('Please log in to submit a rating.');
+    return;
+  }
+  if (currentUser.is_admin) {
+    alert('Admin accounts cannot submit ratings.');
+    closeRatingModal();
+    return;
+  }
+  if (currentUser.has_rated) {
+    alert('You have already submitted a rating. Thank you!');
+    closeRatingModal();
+    return;
+  }
+
+  const commentInput = document.getElementById('ratingCommentInput');
+  const comment = commentInput ? commentInput.value.trim() : '';
+
+  try {
+    const res = await fetch('/api/user/rate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rating: selectedStarRating,
+        comment: comment
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      alert(data.error || 'Failed to submit rating.');
+      return;
+    }
+
     currentUser.has_rated = 1;
     currentUser.rating = selectedStarRating;
-    currentUser.rating_comment = document.getElementById('ratingCommentInput').value.trim() || 'Great platform!';
+    currentUser.rating_comment = comment || 'Great platform!';
     currentUser.rated_at = new Date().toISOString();
 
     const users = getStore('users_db', []);
-    const idx = users.findIndex(u => u.id === currentUser.id);
+    const idx = users.findIndex(u => u.id === currentUser.id || u.username === currentUser.username);
     if (idx >= 0) {
-      users[idx] = currentUser;
+      users[idx] = { ...users[idx], ...currentUser };
       setStore('users_db', users);
     }
     setSessionUser(currentUser);
+
+    const rateBtn = document.getElementById('ratePortalBtn');
+    if (rateBtn) rateBtn.style.display = 'none';
+
+    closeRatingModal();
+    alert(data.message || 'Thank you for your rating!');
+
+    // Refetch / refresh dashboard if admin view is open
+    if (document.getElementById('viewAdmin') && document.getElementById('viewAdmin').style.display !== 'none') {
+      loadAdminDashboard();
+    }
+    switchTab(currentUser && currentUser.is_admin ? 'admin' : 'cv');
+  } catch (err) {
+    console.warn('Network request failed, falling back to local storage:', err);
+    currentUser.has_rated = 1;
+    currentUser.rating = selectedStarRating;
+    currentUser.rating_comment = comment || 'Great platform!';
+    currentUser.rated_at = new Date().toISOString();
+
+    const users = getStore('users_db', []);
+    const idx = users.findIndex(u => u.id === currentUser.id || u.username === currentUser.username);
+    if (idx >= 0) {
+      users[idx] = { ...users[idx], ...currentUser };
+      setStore('users_db', users);
+    }
+    setSessionUser(currentUser);
+
+    const rateBtn = document.getElementById('ratePortalBtn');
+    if (rateBtn) rateBtn.style.display = 'none';
+
+    closeRatingModal();
+    alert('Thank you for your rating!');
+    switchTab(currentUser && currentUser.is_admin ? 'admin' : 'cv');
   }
-  closeRatingModal();
-  alert('Thank you for your rating!');
-  switchTab(currentUser && currentUser.is_admin ? 'admin' : 'cv');
 }
 
 function switchTab(tabId) {
@@ -1353,14 +1428,24 @@ async function loadAdminDashboard() {
   let users = getStore('users_db', []);
   let sessions = getStore('sessions_db', []);
   let reports = getStore('reports_db', []);
+  let backendSummary = null;
+  let backendRatedUsers = null;
 
   // Sync with live Flask API if running
   try {
     const res = await fetch('/api/admin/stats');
     if (res.ok) {
       const data = await res.json();
-      if (data.success && data.users && data.users.length) {
-        users = data.users;
+      if (data.success) {
+        if (data.users && data.users.length) {
+          users = data.users;
+        }
+        if (data.summary) {
+          backendSummary = data.summary;
+        }
+        if (data.rated_user_details) {
+          backendRatedUsers = data.rated_user_details;
+        }
       }
     }
   } catch (e) {
@@ -1368,19 +1453,38 @@ async function loadAdminDashboard() {
   }
 
   const nonAdminUsers = users.filter(u => !u.is_admin);
-  const totalUsers = nonAdminUsers.length;
-  const totalSessions = sessions.length;
-  const totalReports = reports.length;
+  const totalUsers = (backendSummary && backendSummary.total_users !== undefined) ? backendSummary.total_users : nonAdminUsers.length;
+  const totalSessions = (backendSummary && backendSummary.total_sessions !== undefined) ? backendSummary.total_sessions : sessions.length;
+  const totalReports = (backendSummary && backendSummary.total_cv_reports !== undefined) ? backendSummary.total_cv_reports : reports.length;
 
-  // Real user ratings
-  const ratedUsers = users.filter(u => u.has_rated && u.rating > 0 && !u.is_admin);
+  // Real user ratings from database or local fallback
   const ratingsCount = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  let sumRating = 0;
-  ratedUsers.forEach(u => {
-    ratingsCount[u.rating] = (ratingsCount[u.rating] || 0) + 1;
-    sumRating += u.rating;
-  });
-  const avgRating = ratedUsers.length ? (sumRating / ratedUsers.length).toFixed(1) : "5.0";
+  let totalRatings = 0;
+  let avgRatingDisplay = "No user ratings yet";
+  let ratedUsersList = [];
+
+  if (backendSummary && backendSummary.ratings_distribution) {
+    for (let star = 1; star <= 5; star++) {
+      ratingsCount[star] = backendSummary.ratings_distribution[star] ?? backendSummary.ratings_distribution[String(star)] ?? 0;
+    }
+    totalRatings = backendSummary.total_ratings !== undefined ? backendSummary.total_ratings : (ratingsCount[1] + ratingsCount[2] + ratingsCount[3] + ratingsCount[4] + ratingsCount[5]);
+    if (totalRatings > 0 && backendSummary.avg_rating !== null && backendSummary.avg_rating !== undefined) {
+      avgRatingDisplay = `⭐ ${parseFloat(backendSummary.avg_rating).toFixed(1)} / 5`;
+    }
+    ratedUsersList = backendRatedUsers || [];
+  } else {
+    const localRated = users.filter(u => u.has_rated && u.rating > 0 && !u.is_admin);
+    let sumRating = 0;
+    localRated.forEach(u => {
+      ratingsCount[u.rating] = (ratingsCount[u.rating] || 0) + 1;
+      sumRating += u.rating;
+    });
+    totalRatings = localRated.length;
+    if (totalRatings > 0) {
+      avgRatingDisplay = `⭐ ${(sumRating / totalRatings).toFixed(1)} / 5`;
+    }
+    ratedUsersList = localRated;
+  }
 
   // Real candidate readiness & match scores
   let sumMatchScore = 0;
@@ -1417,12 +1521,12 @@ async function loadAdminDashboard() {
   document.getElementById('adminTotalUsers').textContent = totalUsers;
   document.getElementById('adminTotalReports').textContent = totalReports;
   document.getElementById('adminAvgCandidateMatch').textContent = `${avgCandidateMatch}%`;
-  document.getElementById('adminAvgRating').textContent = `⭐ ${avgRating} / 5`;
+  document.getElementById('adminAvgRating').textContent = avgRatingDisplay;
   document.getElementById('adminSuspiciousUsers').textContent = suspiciousCount;
 
-  renderDetailedRatingsTable(ratedUsers);
+  renderDetailedRatingsTable(ratedUsersList);
   renderAdminUserTable(users);
-  renderRatingsChart(ratingsCount);
+  renderRatingsChart(ratingsCount, totalRatings);
   renderGrowthChart(users);
   renderReadinessChart(readinessCounts, totalReports);
   renderSkillGapChart(gapCounter);
@@ -1433,8 +1537,8 @@ function renderDetailedRatingsTable(ratedUsers) {
   const tbody = document.getElementById('adminRatingsTableBody');
   tbody.innerHTML = '';
 
-  if (!ratedUsers.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-soft);">No user ratings submitted yet.</td></tr>';
+  if (!ratedUsers || !ratedUsers.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-soft);padding:24px;">No user ratings yet</td></tr>';
     return;
   }
 
@@ -1510,8 +1614,25 @@ function toggleBanUser(userId, doBan) {
   }
 }
 
-function renderRatingsChart(ratingsCount) {
-  const ctx = document.getElementById('ratingsChart').getContext('2d');
+function renderRatingsChart(ratingsCount, totalRatings = 0) {
+  const chartCanvas = document.getElementById('ratingsChart');
+  const noRatingsMsg = document.getElementById('noRatingsMsg');
+  const sumCount = totalRatings || Object.values(ratingsCount).reduce((a, b) => a + b, 0);
+
+  if (sumCount === 0) {
+    if (noRatingsMsg) noRatingsMsg.style.display = 'block';
+    if (chartCanvas) chartCanvas.style.display = 'none';
+    if (ratingsChartInstance) {
+      ratingsChartInstance.destroy();
+      ratingsChartInstance = null;
+    }
+    return;
+  }
+
+  if (noRatingsMsg) noRatingsMsg.style.display = 'none';
+  if (chartCanvas) chartCanvas.style.display = 'block';
+
+  const ctx = chartCanvas.getContext('2d');
   if (ratingsChartInstance) ratingsChartInstance.destroy();
 
   ratingsChartInstance = new Chart(ctx, {
@@ -1520,11 +1641,26 @@ function renderRatingsChart(ratingsCount) {
       labels: ['1 Star', '2 Stars', '3 Stars', '4 Stars', '5 Stars'],
       datasets: [{
         label: 'Ratings Count',
-        data: [ratingsCount[1], ratingsCount[2], ratingsCount[3], ratingsCount[4], ratingsCount[5]],
+        data: [
+          ratingsCount[1] || 0,
+          ratingsCount[2] || 0,
+          ratingsCount[3] || 0,
+          ratingsCount[4] || 0,
+          ratingsCount[5] || 0
+        ],
         backgroundColor: ['#C53030', '#DD6B20', '#D69E2E', '#319795', '#286F63']
       }]
     },
-    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1, precision: 0 }
+        }
+      }
+    }
   });
 }
 
