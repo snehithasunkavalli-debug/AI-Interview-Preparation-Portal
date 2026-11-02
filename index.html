@@ -911,6 +911,9 @@ let currentUser = getSessionUser();
 let currentCVAnalysis = null;
 let currentSessionId = null;
 let currentQuestionIndex = 0;
+let currentFollowUpCount = 0;
+let isInterviewSubmitting = false;
+const MAX_FOLLOW_UPS_PER_QUESTION = 2;
 let totalQuestions = 5;
 let currentQuestionData = null;
 let selectedFile = null;
@@ -947,6 +950,17 @@ window.addEventListener('DOMContentLoaded', async () => {
   ['mousemove', 'keypress', 'click', 'scroll', 'touchstart'].forEach(evt => {
     window.addEventListener(evt, resetInactivityTimer);
   });
+
+  // Setup Enter key submission on chatInput
+  const chatInput = document.getElementById('chatInput');
+  if (chatInput) {
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendAnswer();
+      }
+    });
+  }
 
   // Verify and sync active session from Flask server
   try {
@@ -1329,6 +1343,8 @@ function switchTab(tabId) {
     loadSavedSessions();
   } else if (tabId === 'admin') {
     loadAdminDashboard();
+  } else if (tabId === 'chat') {
+    restoreActiveInterviewSession();
   }
 }
 
@@ -2391,46 +2407,509 @@ function renderAnalysis(a) {
 }
 
 // ----------------- MOCK INTERVIEW CHAT -----------------
-function launchInterviewFromCV() { if (!currentCVAnalysis) return; startNewInterviewSession(currentCVAnalysis.report_id, currentCVAnalysis.candidate_name, "Target Company Requirements"); }
-function startNewCustomInterview() { const role = prompt("Enter target role:", "Software Engineer"); if (role) startNewInterviewSession(null, currentUser ? currentUser.full_name : "Candidate", role); }
+function launchInterviewFromCV() {
+  if (!currentCVAnalysis) return;
+  startNewInterviewSession(currentCVAnalysis.report_id, currentCVAnalysis.candidate_name, "Target Company Requirements");
+}
+
+function startNewCustomInterview() {
+  const role = prompt("Enter target role:", "Software Engineer");
+  if (role) startNewInterviewSession(null, currentUser ? currentUser.full_name : "Candidate", role);
+}
+
 function startNewInterviewSession(cvId, name, role) {
-  switchTab('chat'); let questions = currentCVAnalysis ? currentCVAnalysis.likely_interview_questions : analyzeCvWithRequirements("Python SQL", "Python AWS", "sample").likely_interview_questions;
-  currentSessionId = 'sess_' + Date.now(); currentQuestionIndex = 0;
+  switchTab('chat');
+  let questions = currentCVAnalysis ? currentCVAnalysis.likely_interview_questions : analyzeCvWithRequirements("Python SQL", "Python AWS", "sample").likely_interview_questions;
+  if (!questions || !questions.length) {
+    questions = [
+      { question: "Walk me through how you used Python in your recent projects to design scalable, production-ready systems.", category: "Core Requirement Verification", why_asked: "Evaluates production engineering depth." },
+      { question: "Our role prioritizes Cloud Architecture & Scalability. How do you design systems for high availability and fault tolerance?", category: "Skill Gap Mitigation", why_asked: "Tests system design and scaling." },
+      { question: "Describe an instance where a technical deliverable faced performance bottlenecks. How did you diagnose and resolve it?", category: "Troubleshooting & Problem Solving", why_asked: "Assesses problem-solving rigor." }
+    ];
+  }
+
+  currentSessionId = 'sess_' + Date.now();
+  currentQuestionIndex = 0;
+  currentFollowUpCount = 0;
+
   const sessionObj = {
     session_id: currentSessionId,
+    cv_id: cvId,
     candidate_name: name,
     target_role: role,
     created_at: new Date().toISOString(),
     status: 'in_progress',
+    total_questions: questions.length,
+    current_question_index: 0,
+    follow_up_count: 0,
     questions,
     messages: [],
     user_id: currentUser ? currentUser.id : null,
     username: currentUser ? currentUser.username : null
   };
+
   document.getElementById('chatHeaderRole').textContent = `AI Interviewer · ${role}`;
   document.getElementById('chatHeaderCandidate').textContent = `Candidate: ${name}`;
   document.getElementById('chatProgressPill').textContent = `Question 1 of ${questions.length}`;
+
   const welcome_text = `👋 Welcome ${name}! I'm your AI Interviewer for **${role}**.\n\nLet's begin with Question 1:\n\n**${questions[0].question}**`;
-  sessionObj.messages.push({ role: 'assistant', content: welcome_text }); setStore('sessions_db', [sessionObj, ...getStore('sessions_db', [])]);
-  document.getElementById('chatMessages').innerHTML = ''; appendAIMessage(welcome_text);
+  sessionObj.messages.push({ role: 'assistant', content: welcome_text, question_index: 0, is_follow_up: false });
+
+  setStore('sessions_db', [sessionObj, ...getStore('sessions_db', [])]);
+  localStorage.setItem('active_interview_session', JSON.stringify(sessionObj));
+
+  document.getElementById('chatMessages').innerHTML = '';
+  appendAIMessage(welcome_text);
+
+  // Sync session creation to server backend
+  try {
+    fetch('/api/interview/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: currentSessionId,
+        cv_id: cvId,
+        candidate_name: name,
+        target_role: role,
+        questions: questions,
+        cv_text: currentCVAnalysis ? (currentCVAnalysis.cv_text || "") : "",
+        job_requirements: currentCVAnalysis ? (currentCVAnalysis.job_requirements || "") : ""
+      })
+    }).catch(() => {});
+  } catch (e) {}
 }
+
+function restoreActiveInterviewSession() {
+  try {
+    const saved = localStorage.getItem('active_interview_session');
+    if (!saved) return;
+    const sessionObj = JSON.parse(saved);
+    if (!sessionObj || !Array.isArray(sessionObj.messages) || !sessionObj.messages.length) return;
+
+    currentSessionId = sessionObj.session_id;
+    currentQuestionIndex = sessionObj.current_question_index || 0;
+    currentFollowUpCount = sessionObj.follow_up_count || 0;
+
+    const role = sessionObj.target_role || 'Software Engineer';
+    const name = sessionObj.candidate_name || (currentUser ? currentUser.full_name : 'Candidate');
+    const totalQ = sessionObj.total_questions || (sessionObj.questions ? sessionObj.questions.length : 3);
+
+    document.getElementById('chatHeaderRole').textContent = `AI Interviewer · ${role}`;
+    document.getElementById('chatHeaderCandidate').textContent = `Candidate: ${name}`;
+
+    const pill = document.getElementById('chatProgressPill');
+    if (pill) {
+      if (sessionObj.status === 'completed') {
+        pill.textContent = 'Completed · All Questions Answered';
+      } else if (currentFollowUpCount > 0) {
+        pill.textContent = `Question ${currentQuestionIndex + 1} of ${totalQ} · Follow-up ${currentFollowUpCount}/${MAX_FOLLOW_UPS_PER_QUESTION}`;
+      } else {
+        pill.textContent = `Question ${currentQuestionIndex + 1} of ${totalQ}`;
+      }
+    }
+
+    const chatMessages = document.getElementById('chatMessages');
+    chatMessages.innerHTML = '';
+    sessionObj.messages.forEach(m => {
+      if (m.role === 'assistant' || m.role === 'ai') {
+        appendAIMessage(m.content);
+      } else {
+        appendUserMessage(m.content, null);
+      }
+    });
+  } catch (e) {
+    console.warn('Failed to restore active interview session:', e);
+  }
+}
+
+function clientEvaluateAdaptiveFollowUp(answer, originalQ, role, followUpCount, maxFollowUps, conversationHistory) {
+  if (followUpCount >= maxFollowUps) {
+    return {
+      action: 'next_question',
+      is_follow_up: false,
+      transition_prefix: "Thank you for sharing those insights. Let's move on to the next question."
+    };
+  }
+
+  const ansClean = (answer || '').trim();
+  const ansLower = ansClean.toLowerCase();
+  const words = ansClean.split(/\s+/).filter(Boolean);
+
+  const prevAsked = new Set();
+  (conversationHistory || []).forEach(m => {
+    if (m.role === 'assistant' || m.role === 'ai') {
+      prevAsked.add((m.content || '').toLowerCase());
+    }
+  });
+
+  // 1. Extremely short / low effort
+  const shortEvasive = ['yes', 'no', 'yeah', 'yep', 'sure', 'ok', 'okay', 'none', 'nothing', 'idk', 'python', 'used it', 'done', 'fine'];
+  if (words.length < 5 || ansClean.length < 20 || (words.length < 8 && shortEvasive.includes(ansLower))) {
+    return {
+      action: 'follow_up',
+      is_follow_up: true,
+      follow_up_question: 'Your response was quite brief. Could you elaborate on your specific hands-on approach and share a concrete example from your experience?'
+    };
+  }
+
+  // 2. Off-topic answer
+  const offTopic = ['weather', 'movie', 'dinner', 'lunch', 'breakfast', 'hobby', 'football', 'cricket', 'basketball', 'recipe', 'song', 'music', 'vacation', 'holiday', 'dog', 'cat', 'pet', 'joke', 'politics', 'president'];
+  if (offTopic.some(m => ansLower.includes(m)) && words.length >= 5) {
+    return {
+      action: 'follow_up',
+      is_follow_up: true,
+      follow_up_question: `That seems somewhat separate from our technical focus. In the context of ${role}, could you focus specifically on how you addressed the core technical requirements?`
+    };
+  }
+
+  // 3. Vague claims
+  const vagueRx = /\b(made\s+it\s+(?:very\s+)?(?:fast|faster|better|scalable|smooth)|optimized\s+(?:everything|performance|the\s+system)|improved\s+performance\s+significantly|used\s+best\s+practices|handled\s+everything)\b/i;
+  const metricRx = /\b(\d+[%xms]|latency|profiler|throughput|benchmark|cprofile|datadog|prometheus|p99|p95|rps)\b/i;
+  if (vagueRx.test(ansLower) && !metricRx.test(ansLower) && words.length < 35) {
+    return {
+      action: 'follow_up',
+      is_follow_up: true,
+      follow_up_question: 'You mentioned optimizing performance and using best practices. What specific metrics or profiling tools did you use to measure the bottleneck, and what concrete technical changes delivered that improvement?'
+    };
+  }
+
+  // 4. If already answered follow-up with sufficient depth
+  if (followUpCount >= 1 && (words.length >= 25 || metricRx.test(ansLower))) {
+    return {
+      action: 'next_question',
+      is_follow_up: false,
+      transition_prefix: "Great explanation of your approach, technical decisions, and trade-offs. Let's move forward."
+    };
+  }
+
+  // 5. Tech mentions
+  if (ansLower.includes('machine learning') || ansLower.includes('ml') || ansLower.includes('algorithm')) {
+    const q = 'You mentioned using Python for machine learning. Could you explain which machine-learning algorithms you implemented and how you evaluated their performance?';
+    if (!prevAsked.has(q.toLowerCase())) {
+      return { action: 'follow_up', is_follow_up: true, follow_up_question: q };
+    }
+  }
+  if (ansLower.includes('rest api') || ansLower.includes('api') || ansLower.includes('endpoints')) {
+    const q = 'How did you handle API authentication, error handling, and validation in that project?';
+    if (!prevAsked.has(q.toLowerCase())) {
+      return { action: 'follow_up', is_follow_up: true, follow_up_question: q };
+    }
+  }
+  if (ansLower.includes('docker') || ansLower.includes('kubernetes') || ansLower.includes('container')) {
+    const q = 'How did you manage container configuration, build optimization, and secret management in that deployment pipeline?';
+    if (!prevAsked.has(q.toLowerCase())) {
+      return { action: 'follow_up', is_follow_up: true, follow_up_question: q };
+    }
+  }
+  if (ansLower.includes('sql') || ansLower.includes('postgres') || ansLower.includes('database')) {
+    const q = 'How did you approach database schema design, indexing, and query optimization to handle concurrent read and write operations?';
+    if (!prevAsked.has(q.toLowerCase())) {
+      return { action: 'follow_up', is_follow_up: true, follow_up_question: q };
+    }
+  }
+
+  // 6. Detailed technical initial answer (followUpCount === 0)
+  if (followUpCount === 0) {
+    const q = "That's a solid architectural overview. What were the most critical trade-offs or constraints you encountered in that design, and how would you handle a significant spike in traffic or data volume?";
+    if (!prevAsked.has(q.toLowerCase())) {
+      return { action: 'follow_up', is_follow_up: true, follow_up_question: q };
+    }
+  }
+
+  return {
+    action: 'next_question',
+    is_follow_up: false,
+    transition_prefix: "Thank you for those details. Let's move on to the next question."
+  };
+}
+
 function appendAIMessage(content) {
-  const chatMessages = document.getElementById('chatMessages'); const row = document.createElement('div'); row.className = 'msg-row ai';
+  const chatMessages = document.getElementById('chatMessages');
+  const row = document.createElement('div');
+  row.className = 'msg-row ai';
   row.innerHTML = `<div class="avatar">🤖</div><div class="bubble">${content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</div>`;
-  chatMessages.appendChild(row); chatMessages.scrollTop = chatMessages.scrollHeight;
+  chatMessages.appendChild(row);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+
 function appendUserMessage(content, feedback) {
-  const chatMessages = document.getElementById('chatMessages'); const row = document.createElement('div'); row.className = 'msg-row user';
+  const chatMessages = document.getElementById('chatMessages');
+  const row = document.createElement('div');
+  row.className = 'msg-row user';
   row.innerHTML = `<div class="avatar" style="background:var(--ink-light);">👤</div><div><div class="bubble">${content.replace(/\n/g, '<br>')}</div></div>`;
-  chatMessages.appendChild(row); chatMessages.scrollTop = chatMessages.scrollHeight;
+  chatMessages.appendChild(row);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+
 async function sendAnswer() {
-  const input = document.getElementById('chatInput'); const text = input.value.trim(); if (!text) return; input.value = '';
-  appendUserMessage(text, null); appendAIMessage("Great response. Moving on to the next section.");
+  if (isInterviewSubmitting) return;
+  const input = document.getElementById('chatInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const text = input.value.trim();
+  if (!text) return;
+
+  isInterviewSubmitting = true;
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Analyzing...';
+  }
+  input.value = '';
+
+  // Append candidate message immediately so it is never lost
+  appendUserMessage(text, null);
+
+  // Retrieve or initialize session state
+  let sessions = getStore('sessions_db', []);
+  let sessionObj = sessions.find(s => s.session_id === currentSessionId);
+  if (!sessionObj) {
+    sessionObj = {
+      session_id: currentSessionId || ('sess_' + Date.now()),
+      candidate_name: currentUser ? currentUser.full_name : 'Candidate',
+      target_role: 'Target Company Requirements',
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      total_questions: 3,
+      current_question_index: currentQuestionIndex,
+      follow_up_count: currentFollowUpCount,
+      questions: currentCVAnalysis ? currentCVAnalysis.likely_interview_questions : [],
+      messages: []
+    };
+    currentSessionId = sessionObj.session_id;
+    sessions.unshift(sessionObj);
+  }
+
+  sessionObj.messages.push({
+    role: 'user',
+    content: text,
+    question_index: currentQuestionIndex
+  });
+  setStore('sessions_db', sessions);
+  localStorage.setItem('active_interview_session', JSON.stringify(sessionObj));
+
+  // Show typing indicator in conversation
+  const chatMessages = document.getElementById('chatMessages');
+  const typingRow = document.createElement('div');
+  typingRow.id = 'aiTypingIndicator';
+  typingRow.className = 'msg-row ai';
+  typingRow.innerHTML = '<div class="avatar">🤖</div><div class="bubble" style="color:var(--text-soft);font-style:italic;">Interviewer is analyzing your response...</div>';
+  chatMessages.appendChild(typingRow);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  let aiResponse = null;
+  try {
+    const res = await fetch('/api/interview/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: currentSessionId,
+        answer: text,
+        cv_text: currentCVAnalysis ? (currentCVAnalysis.cv_text || "") : "",
+        job_requirements: currentCVAnalysis ? (currentCVAnalysis.job_requirements || "") : "",
+        max_follow_ups: MAX_FOLLOW_UPS_PER_QUESTION
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        aiResponse = data;
+      }
+    }
+  } catch (e) {
+    console.warn('Backend interview API unavailable, using graceful client-side adaptive evaluation:', e);
+  }
+
+  // Remove typing indicator
+  const indicator = document.getElementById('aiTypingIndicator');
+  if (indicator) indicator.remove();
+
+  let action = 'follow_up';
+  let aiMessageText = '';
+  let newFollowUpCount = currentFollowUpCount;
+  let newQuestionIndex = currentQuestionIndex;
+  let totalQ = sessionObj.total_questions || (sessionObj.questions ? sessionObj.questions.length : 3);
+
+  if (aiResponse) {
+    action = aiResponse.action;
+    aiMessageText = aiResponse.ai_message;
+    newFollowUpCount = aiResponse.follow_up_count;
+    newQuestionIndex = aiResponse.current_question_index;
+    totalQ = aiResponse.total_questions || totalQ;
+  } else {
+    // Graceful offline/fallback client-side adaptive evaluation
+    const currQText = (sessionObj.questions && sessionObj.questions[currentQuestionIndex])
+      ? sessionObj.questions[currentQuestionIndex].question
+      : "Walk me through how you used technical tools in your recent projects.";
+    const evalResult = clientEvaluateAdaptiveFollowUp(
+      text,
+      currQText,
+      sessionObj.target_role || "Target Role",
+      currentFollowUpCount,
+      MAX_FOLLOW_UPS_PER_QUESTION,
+      sessionObj.messages
+    );
+    action = evalResult.action;
+
+    if (action === 'follow_up') {
+      newFollowUpCount = currentFollowUpCount + 1;
+      aiMessageText = `🔍 **Follow-up Question:**\n\n${evalResult.follow_up_question}`;
+    } else if (action === 'next_question') {
+      newQuestionIndex = currentQuestionIndex + 1;
+      newFollowUpCount = 0;
+      if (newQuestionIndex < totalQ) {
+        const nextQObj = (sessionObj.questions && sessionObj.questions[newQuestionIndex]) || { question: "Describe a technical obstacle and how you overcame it.", category: "Technical" };
+        aiMessageText = `${evalResult.transition_prefix}\n\n**Question ${newQuestionIndex + 1} (${nextQObj.category || 'Interview'}):**\n\n${nextQObj.question}`;
+      } else {
+        action = 'completed';
+        aiMessageText = `🎉 **Interview Completed!**\n\nThank you for completing this technical mock interview for **${sessionObj.target_role || 'Target Role'}**. You have answered all ${totalQ} questions and follow-ups with thoughtful technical rigor.\n\nYour session transcript is recorded.`;
+      }
+    }
+  }
+
+  // Update state variables
+  currentQuestionIndex = newQuestionIndex;
+  currentFollowUpCount = newFollowUpCount;
+
+  // Update progress pill (ensure follow-up questions do not increase original question count)
+  const pill = document.getElementById('chatProgressPill');
+  if (pill) {
+    if (action === 'completed') {
+      pill.textContent = 'Completed · All Questions Answered';
+    } else if (action === 'follow_up') {
+      pill.textContent = `Question ${currentQuestionIndex + 1} of ${totalQ} · Follow-up ${currentFollowUpCount}/${MAX_FOLLOW_UPS_PER_QUESTION}`;
+    } else {
+      pill.textContent = `Question ${currentQuestionIndex + 1} of ${totalQ}`;
+    }
+  }
+
+  // Display AI's response in chat interface
+  appendAIMessage(aiMessageText);
+
+  // Audio speech synthesis if enabled
+  if (autoSpeakAudio) {
+    speakInterviewText(aiMessageText);
+  }
+
+  // Save updated session state
+  sessionObj.current_question_index = currentQuestionIndex;
+  sessionObj.follow_up_count = currentFollowUpCount;
+  if (action === 'completed') sessionObj.status = 'completed';
+  sessionObj.messages.push({
+    role: 'assistant',
+    content: aiMessageText,
+    question_index: currentQuestionIndex,
+    is_follow_up: (action === 'follow_up')
+  });
+
+  setStore('sessions_db', sessions);
+  localStorage.setItem('active_interview_session', JSON.stringify(sessionObj));
+
+  isInterviewSubmitting = false;
+  if (sendBtn) {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Submit';
+  }
+  input.focus();
 }
-function askCoach(q) { appendAIMessage(`💡 **Coach Tip:** Structure your response using STAR technique.`); }
-function toggleVoiceInput() { alert('Voice speech input activated.'); }
-function toggleAudioPlayback() { autoSpeakAudio = !autoSpeakAudio; }
+
+function speakInterviewText(text) {
+  if (!window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const clean = text.replace(/[*_#`]/g, '').replace(/<[^>]*>/g, '');
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {}
+}
+
+function askCoach(q) {
+  appendAIMessage(`💡 **Coach Tip:** Structure your response using the STAR technique: Situation (context), Task (your goal), Action (technical implementation decisions & code), and Result (measurable impact, metrics, or lessons learned).`);
+}
+
+function toggleVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('Voice speech recognition is not supported in this browser. Please use Chrome or Edge, or type your answer.');
+    return;
+  }
+  const micBtn = document.getElementById('micBtn');
+  if (!window.interviewRecognizer) {
+    try {
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = 'en-US';
+      rec.onstart = () => { if (micBtn) micBtn.style.color = '#ef4444'; };
+      rec.onend = () => { if (micBtn) micBtn.style.color = ''; window.interviewRecognizer = null; };
+      rec.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        const input = document.getElementById('chatInput');
+        if (input) {
+          input.value = (input.value ? input.value + ' ' : '') + transcript;
+          input.focus();
+        }
+      };
+      rec.onerror = () => { if (micBtn) micBtn.style.color = ''; window.interviewRecognizer = null; };
+      window.interviewRecognizer = rec;
+      rec.start();
+    } catch (err) {
+      alert('Could not activate microphone: ' + err.message);
+    }
+  } else {
+    window.interviewRecognizer.stop();
+    window.interviewRecognizer = null;
+    if (micBtn) micBtn.style.color = '';
+  }
+}
+
+function toggleAudioPlayback() {
+  autoSpeakAudio = !autoSpeakAudio;
+  const btn = document.getElementById('ttsBtn');
+  if (btn) {
+    btn.style.opacity = autoSpeakAudio ? '1.0' : '0.4';
+    btn.title = autoSpeakAudio ? 'Audio Playback (Enabled)' : 'Audio Playback (Muted)';
+  }
+}
+
+async function viewSessionTranscript(sessionId) {
+  let session = getStore('sessions_db', []).find(s => s.session_id === sessionId);
+  try {
+    const res = await fetch(`/api/interview/session/${sessionId}/transcript`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.messages) session = data;
+    }
+  } catch (e) {}
+
+  if (!session || !session.messages || !session.messages.length) {
+    alert("No transcript records found for session: " + sessionId);
+    return;
+  }
+
+  const content = session.messages.map((m) => {
+    const roleLabel = (m.role === 'assistant' || m.role === 'ai') ? '🤖 AI Interviewer' : '👤 Candidate';
+    const color = (m.role === 'assistant' || m.role === 'ai') ? 'var(--gold-dim)' : 'var(--blue-dim)';
+    return `<div style="margin-bottom:14px;padding:12px;background:var(--card-bg);border-radius:8px;border-left:3px solid ${color};">
+      <strong style="color:${color};font-size:12px;">${roleLabel}</strong>
+      <div style="margin-top:6px;font-size:13px;line-height:1.5;">${m.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')}</div>
+    </div>`;
+  }).join('');
+
+  const modal = document.getElementById('adminReportModal');
+  const modalContent = document.getElementById('adminReportModalContent');
+  if (modal && modalContent) {
+    modalContent.innerHTML = `
+      <h4 style="margin:0 0 12px;color:var(--text-main);font-family:'Fraunces',serif;">Mock Interview Transcript</h4>
+      <p style="color:var(--text-soft);font-size:12px;margin-bottom:16px;">
+        Candidate: <strong>${session.candidate_name || 'Candidate'}</strong> · Role: <strong>${session.target_role || 'Target Role'}</strong> · Status: <strong>${session.status || 'in_progress'}</strong>
+      </p>
+      ${content}
+    `;
+    modal.style.display = 'flex';
+  } else {
+    alert("Transcript for session: " + sessionId);
+  }
+}
 
 // ----------------- HISTORY & ISOLATED SAVED REPORTS -----------------
 async function loadSavedReports() {
@@ -2545,14 +3024,29 @@ async function viewSavedReport(id) {
   renderAnalysis(rep);
 }
 
-function loadSavedSessions() {
+async function loadSavedSessions() {
   const tbody = document.getElementById('sessionsTableBody');
-  const sessions = getStore('sessions_db', []);
+  let sessions = getStore('sessions_db', []);
   
   if (!currentUser) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Please sign in to view your interview sessions.</td></tr>';
     return;
   }
+
+  try {
+    const res = await fetch('/api/sessions');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.sessions)) {
+        // Merge server sessions with local sessions
+        const localSessions = getStore('sessions_db', []);
+        const serverIds = new Set(data.sessions.map(s => s.session_id));
+        const combined = [...data.sessions, ...localSessions.filter(s => !serverIds.has(s.session_id))];
+        sessions = combined;
+        setStore('sessions_db', sessions);
+      }
+    }
+  } catch (e) {}
 
   // Admin sees all sessions; regular users only see their own sessions!
   const userSessions = currentUser.is_admin
@@ -2576,10 +3070,10 @@ function loadSavedSessions() {
     tr.innerHTML = `
       <td>${(s.created_at || '').substring(0, 10)}</td>
       <td><strong>${s.candidate_name || 'Candidate'}</strong>${userBadge}</td>
-      <td>${s.target_role}</td>
-      <td><span class="tag">${s.status}</span></td>
+      <td>${s.target_role || 'Target Role'}</td>
+      <td><span class="tag">${s.status || 'in_progress'}</span></td>
       <td><strong>${s.overall_score || 85}/100</strong></td>
-      <td><button class="btn-sm" onclick="alert('Viewing session transcript for: ${s.session_id}')">📜 Transcript</button></td>
+      <td><button class="btn-sm" onclick="viewSessionTranscript('${s.session_id}')">📜 Transcript</button></td>
     `;
     tbody.appendChild(tr);
   });

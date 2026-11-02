@@ -772,6 +772,342 @@ def analyze_cv_algorithm(cv_text, job_requirements, candidate_name="Candidate", 
         "likely_interview_questions": questions
     }
 
+# =====================================================================
+# Adaptive Follow-Up Mock Interview Engine
+# =====================================================================
+DEFAULT_MAX_FOLLOW_UPS = 2
+
+def get_max_follow_ups():
+    try:
+        val = get_setting("MAX_FOLLOW_UPS_PER_QUESTION", DEFAULT_MAX_FOLLOW_UPS)
+        return int(val)
+    except Exception:
+        return DEFAULT_MAX_FOLLOW_UPS
+
+def analyze_interview_response(
+    original_question: str,
+    original_question_category: str,
+    candidate_answer: str,
+    conversation_history: list = None,
+    follow_up_count: int = 0,
+    max_follow_ups: int = DEFAULT_MAX_FOLLOW_UPS,
+    candidate_skills: list = None,
+    required_skills: list = None,
+    target_role: str = "Software Engineer",
+    cv_text: str = "",
+    job_requirements: str = ""
+):
+    """
+    Evaluates candidate's answer adaptively using:
+    - Original interview question & category
+    - Candidate's submitted answer
+    - Resume context & claimed experience
+    - Job requirements & target role
+    - Previous conversation context
+    - Configured follow-up limit
+    
+    Generates meaningful follow-up questions exploring technical knowledge,
+    clarifying vague/unsupported claims, redirecting off-topic answers,
+    or advancing smoothly when the topic is sufficiently explored or max follow-ups reached.
+    """
+    conversation_history = conversation_history or []
+    candidate_skills = candidate_skills or []
+    required_skills = required_skills or []
+    ans_clean = (candidate_answer or "").strip()
+    ans_lower = ans_clean.lower()
+    tokens = [w for w in re.findall(r"[a-zA-Z0-9+#.]+", ans_lower) if w not in STOPWORDS]
+    words_count = len(ans_clean.split())
+
+    # Build set of previously asked assistant questions to guarantee anti-repetition
+    previously_asked = set()
+    for m in conversation_history:
+        if isinstance(m, dict) and m.get("role") in ("assistant", "ai"):
+            text_val = m.get("content", "").strip().lower()
+            previously_asked.add(text_val)
+            if "follow-up question:" in text_val:
+                parts = text_val.split("follow-up question:")
+                if len(parts) > 1:
+                    previously_asked.add(parts[-1].strip().lower())
+
+    # RULE 1: If maximum follow-up count has been reached for this original question,
+    # the AI must advance to the next original question.
+    if follow_up_count >= max_follow_ups:
+        return {
+            "action": "next_question",
+            "is_follow_up": False,
+            "reasoning": f"Configured maximum follow-up count ({max_follow_ups}) reached for this question.",
+            "follow_up_question": None,
+            "transition_prefix": "Thank you for sharing those insights. Let's move on to the next question."
+        }
+
+    # RULE 2: If live Gemini AI is configured, query Gemini 2.0 with the structured prompt
+    gemini_key = (get_setting("GEMINI_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")).strip()
+    if gemini_key and genai is not None:
+        try:
+            client = genai.Client(api_key=gemini_key)
+            history_str = ""
+            for msg in conversation_history[-6:]:
+                role_lbl = "Interviewer" if msg.get("role") in ("assistant", "ai") else "Candidate"
+                history_str += f"{role_lbl}: {msg.get('content', '')}\n"
+
+            prompt = f"""You are an expert technical interviewer evaluating a candidate for the role: {target_role}.
+Job Requirements Skills: {', '.join(required_skills[:6]) if required_skills else 'Software Engineering'}
+Candidate Profile Skills: {', '.join(candidate_skills[:6]) if candidate_skills else 'General Software'}
+
+Original Question: "{original_question}"
+Category: {original_question_category or 'Technical Assessment'}
+
+Conversation History so far:
+{history_str}
+
+Candidate's Latest Answer:
+"{candidate_answer}"
+
+Follow-ups already asked for this topic: {follow_up_count}
+Maximum follow-ups allowed: {max_follow_ups}
+
+Instructions:
+1. If the candidate's answer is extremely short or vague, ask a clarifying question.
+2. If the candidate makes broad/unsupported claims (e.g., "optimized performance", "made it fast"), ask for specific metrics, profilers, or concrete technical changes.
+3. If the candidate mentions specific technologies, tools, algorithms, or projects, ask for implementation details, architecture decisions, trade-offs, or evaluation metrics.
+4. If the candidate's answer is off-topic, redirect back to {target_role} and the question topic.
+5. If the candidate has already answered the follow-up with sufficient technical depth, set action to "next_question".
+6. Do NOT repeat any questions already asked in the conversation history.
+
+Respond in strict JSON with no extra markdown:
+{{
+  "action": "follow_up" or "next_question",
+  "is_follow_up": true or false,
+  "reasoning": "brief explanation",
+  "follow_up_question": "the question to ask if action is follow_up, or null",
+  "transition_prefix": "brief transition text if action is next_question, or null"
+}}"""
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt
+            )
+            raw_text = (response.text or "").strip()
+            json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                action = parsed.get("action", "follow_up")
+                fq = (parsed.get("follow_up_question") or "").strip()
+                if action == "follow_up" and fq and fq.lower() not in previously_asked:
+                    return {
+                        "action": "follow_up",
+                        "is_follow_up": True,
+                        "reasoning": parsed.get("reasoning", "Gemini AI adaptive evaluation"),
+                        "follow_up_question": fq,
+                        "transition_prefix": None
+                    }
+                elif action == "next_question":
+                    return {
+                        "action": "next_question",
+                        "is_follow_up": False,
+                        "reasoning": parsed.get("reasoning", "Gemini AI topic explored"),
+                        "follow_up_question": None,
+                        "transition_prefix": parsed.get("transition_prefix") or "Great explanation. Let's move on to the next question."
+                    }
+        except Exception as e:
+            # Graceful fallback to deterministic intelligent engine
+            print(f"[!] Notice: Gemini AI evaluation fallback ({e}). Using intelligent rule engine.")
+
+    # RULE 3: Intelligent Rule-Based & NLP Follow-Up Evaluator (Offline & Fallback)
+
+    # 3a. Extremely short / non-substantive answer (< 5 words or < 20 chars or one-word evasions)
+    short_evasive = {"yes", "no", "yeah", "yep", "sure", "ok", "okay", "none", "nothing", "idk", "python", "used it", "done", "fine"}
+    if words_count < 5 or len(ans_clean) < 20 or (words_count < 8 and ans_lower in short_evasive):
+        return {
+            "action": "follow_up",
+            "is_follow_up": True,
+            "reasoning": "Candidate answer was very brief; requesting elaboration and practical details.",
+            "follow_up_question": "Your response was quite brief. Could you elaborate on your specific hands-on approach and share a concrete example from your experience?",
+            "transition_prefix": None
+        }
+
+    # 3b. Vague / Unsupported claims (claims of optimization/speed/scale without concrete evidence)
+    vague_claims = [
+        r"\b(?:made\s+it\s+(?:very\s+)?(?:fast|faster|better|scalable|smooth))\b",
+        r"\b(?:optimized\s+(?:everything|performance|the\s+system|all\s+code))\b",
+        r"\b(?:improved\s+(?:performance|speed|scalability)\s+significantly)\b",
+        r"\b(?:used\s+best\s+practices)\b",
+        r"\b(?:handled\s+(?:everything|all\s+tasks|all\s+requirements))\b",
+        r"\b(?:worked\s+on\s+many\s+projects)\b",
+        r"\b(?:did\s+everything\s+according\s+to\s+spec)\b"
+    ]
+    has_vague_claim = any(re.search(pat, ans_lower) for pat in vague_claims)
+    has_concrete_metrics = bool(re.search(r"\b(\d+[%xms]|latency|profiler|throughput|benchmark|cprofile|datadog|prometheus|new\s*relic|p99|p95|rps|qps|sla|auc|roc)\b", ans_lower))
+
+    if has_vague_claim and not has_concrete_metrics and words_count < 35:
+        return {
+            "action": "follow_up",
+            "is_follow_up": True,
+            "reasoning": "Candidate made broad performance/scalability claims without supporting evidence.",
+            "follow_up_question": "You mentioned optimizing performance and using best practices. What specific metrics or profiling tools did you use to measure the bottleneck, and what concrete technical changes delivered that improvement?",
+            "transition_prefix": None
+        }
+
+    # 3c. Irrelevant / Off-topic answer
+    off_topic_indicators = [
+        "weather", "movie", "dinner", "lunch", "breakfast", "hobby", "football",
+        "cricket", "basketball", "soccer", "recipe", "cooking", "song", "music",
+        "vacation", "holiday", "dog", "cat", "pet", "joke", "politics", "president",
+        "weekend", "party", "tennis"
+    ]
+    tech_domain_terms = {
+        "python", "java", "javascript", "typescript", "c++", "c#", "go", "rust", "php", "ruby",
+        "code", "coding", "software", "system", "systems", "api", "apis", "backend", "frontend",
+        "database", "data", "pipeline", "service", "services", "server", "architecture", "architected",
+        "performance", "optimization", "optimize", "optimized", "fast", "faster", "speed",
+        "scale", "scalable", "scalability", "latency", "throughput", "algorithm", "algorithms",
+        "model", "models", "ml", "ai", "machine learning", "deep learning", "classifier",
+        "classification", "regression", "xgboost", "random forest", "neural", "training",
+        "evaluation", "metrics", "auc", "roc", "accuracy", "precision", "recall", "sla", "onnx",
+        "container", "docker", "kubernetes", "cloud", "aws", "azure", "gcp", "deploy", "deployment",
+        "production", "testing", "test", "unit", "tdd", "ci/cd", "git", "framework", "library",
+        "practices", "engineering", "developer", "development", "refactor", "cache", "caching",
+        "redis", "sql", "nosql", "query", "queries", "schema", "table", "tables", "network",
+        "http", "rest", "restful", "json", "endpoint", "security", "auth", "authentication",
+        "authorization", "token", "jwt", "validation", "error", "exception", "logging", "monitor",
+        "monitoring", "prometheus", "grafana", "design", "async", "queue", "celery", "kafka"
+    }
+    prev_q_tokens = []
+    for m in reversed(conversation_history):
+        if isinstance(m, dict) and m.get("role") in ("assistant", "ai"):
+            prev_q_tokens = [w for w in re.findall(r"[a-zA-Z0-9+#.]+", m.get("content", "").lower()) if w not in STOPWORDS and len(w) > 2]
+            break
+
+    all_tax_skills = [s.lower() for cat in SKILL_TAXONOMY.values() for s in cat]
+    has_taxonomy_mention = any(t in all_tax_skills for t in tokens) or any(s in ans_lower for s in all_tax_skills if len(s) > 2)
+    has_tech_domain = any(term in ans_lower for term in tech_domain_terms)
+    q_tokens = [w for w in re.findall(r"[a-zA-Z0-9+#.]+", original_question.lower()) if w not in STOPWORDS and len(w) > 2]
+    context_tokens = set(q_tokens).union(set(prev_q_tokens))
+    overlap_with_context = set(tokens).intersection(context_tokens)
+
+    has_off_topic_words = any(re.search(rf"\b{re.escape(m)}\b", ans_lower) for m in off_topic_indicators)
+    is_off_topic = (has_off_topic_words and not has_taxonomy_mention and not has_tech_domain) or (
+        has_off_topic_words and len(overlap_with_context) == 0
+    ) or (
+        not has_taxonomy_mention and not has_tech_domain and len(overlap_with_context) == 0 and words_count >= 5
+    )
+
+    if is_off_topic:
+        topic_term = original_question_category or "this technical area"
+        return {
+            "action": "follow_up",
+            "is_follow_up": True,
+            "reasoning": "Candidate response appears off-topic; redirecting to the question context.",
+            "follow_up_question": f"That seems somewhat separate from our focus on {topic_term}. In the context of {target_role}, could you focus specifically on how you addressed the core technical requirements?",
+            "transition_prefix": None
+        }
+
+    # 3d. If candidate already answered a follow-up (follow_up_count >= 1) with sufficient technical depth
+    if follow_up_count >= 1 and (words_count >= 20 or (has_concrete_metrics and words_count >= 10)):
+        return {
+            "action": "next_question",
+            "is_follow_up": False,
+            "reasoning": "Candidate answered the follow-up with sufficient technical depth; topic sufficiently explored.",
+            "follow_up_question": None,
+            "transition_prefix": "Great explanation of your approach, technical decisions, and trade-offs. Let's move on to the next question."
+        }
+
+    # 3e. Candidate mentions specific technologies / tools / frameworks
+    extracted_skills = extract_skills_from_text(candidate_answer)
+    tech_candidates = []
+
+    if any(w in ans_lower for w in ["machine learning", "ml", "algorithms", "scikit-learn", "deep learning", "neural network", "model"]):
+        tech_candidates.append((
+            "You mentioned using Python for machine learning. Could you explain which machine-learning algorithms you implemented and how you evaluated their performance?",
+            "Exploring machine learning algorithms and performance evaluation"
+        ))
+
+    if any(w in ans_lower for w in ["rest api", "restful", "api", "apis", "fastapi", "flask", "django", "endpoints"]):
+        tech_candidates.append((
+            "How did you handle API authentication, error handling, and validation in that project?",
+            "Exploring REST API design, authentication, and validation"
+        ))
+
+    if any(w in ans_lower for w in ["docker", "kubernetes", "k8s", "container", "containers"]):
+        tech_candidates.append((
+            "How did you manage container configuration, build optimization, and secret management in that deployment pipeline?",
+            "Exploring container orchestration and deployment practices"
+        ))
+
+    if any(w in ans_lower for w in ["sql", "postgresql", "mysql", "database", "postgres", "queries", "indexing"]):
+        tech_candidates.append((
+            "How did you approach database schema design, indexing, and query optimization to handle concurrent read and write operations?",
+            "Exploring database schema and query optimization"
+        ))
+
+    if any(w in ans_lower for w in ["redis", "cache", "caching", "memcached"]):
+        tech_candidates.append((
+            "What caching strategies (such as cache-aside or write-through) and TTL invalidation policies did you implement to maintain data consistency?",
+            "Exploring caching patterns and invalidation strategies"
+        ))
+
+    if any(w in ans_lower for w in ["microservices", "microservice", "distributed", "kafka", "rabbitmq"]):
+        tech_candidates.append((
+            "How did you handle inter-service communication, distributed tracing, and data consistency across your microservices?",
+            "Exploring distributed microservices architecture"
+        ))
+
+    if any(w in ans_lower for w in ["aws", "azure", "gcp", "google cloud", "s3", "lambda", "cloud"]):
+        tech_candidates.append((
+            "Which specific cloud services did you leverage, and how did you architect the system for high availability and fault tolerance?",
+            "Exploring cloud infrastructure and fault tolerance"
+        ))
+
+    if any(w in ans_lower for w in ["testing", "unit test", "pytest", "tdd", "ci/cd", "test suite"]):
+        tech_candidates.append((
+            "What testing strategies, mock fixtures, and CI automation checks did you enforce to prevent regressions before production release?",
+            "Exploring testing rigor and automation"
+        ))
+
+    if extracted_skills:
+        for sk in extracted_skills:
+            tech_candidates.append((
+                f"You mentioned using {sk}. Could you share an example of a technical challenge you encountered while using {sk} and how you resolved it?",
+                f"Exploring practical technical challenge with {sk}"
+            ))
+
+    # Select the first tech question that has not been asked yet
+    for q_text, r_text in tech_candidates:
+        if q_text.strip().lower() not in previously_asked:
+            return {
+                "action": "follow_up",
+                "is_follow_up": True,
+                "reasoning": r_text,
+                "follow_up_question": q_text,
+                "transition_prefix": None
+            }
+
+    # 3f. Detailed technical answer on initial question (follow_up_count == 0)
+    # Probe deeper into architecture, scalability, trade-offs, and edge cases
+    if follow_up_count == 0:
+        candidates = [
+            "That's a solid architectural overview. What were the most critical trade-offs or constraints you encountered in that design, and how would you handle a significant spike in traffic or data volume?",
+            "Could you walk me through the error handling, edge cases, and failure recovery mechanisms you put in place for that solution?",
+            "How did you verify the reliability of that system, and what production monitoring metrics did you establish?"
+        ]
+        for q_cand in candidates:
+            if q_cand.strip().lower() not in previously_asked:
+                return {
+                    "action": "follow_up",
+                    "is_follow_up": True,
+                    "reasoning": "Detailed technical answer; probing architectural trade-offs and edge cases.",
+                    "follow_up_question": q_cand,
+                    "transition_prefix": None
+                }
+
+    # Default: Advance to next question
+    return {
+        "action": "next_question",
+        "is_follow_up": False,
+        "reasoning": "Topic sufficiently explored; transitioning to next original question.",
+        "follow_up_question": None,
+        "transition_prefix": "Thank you for those details. Let's move on to the next question."
+    }
+
 # Routes
 @app.route("/")
 def index():
@@ -1079,6 +1415,325 @@ def get_saved_sessions():
     rows = cursor.fetchall()
     sessions = [dict(s) for s in rows]
     return jsonify({"success": True, "sessions": sessions, "is_admin": bool(user.get("is_admin"))})
+
+# -----------------------------
+# Adaptive Mock Interview Endpoints
+# -----------------------------
+@app.route("/api/interview/start", methods=["POST"])
+def interview_start():
+    data = request.json or {}
+    session_id = (data.get("session_id") or f"sess_{int(datetime.datetime.now().timestamp() * 1000)}").strip()
+    candidate_name = (data.get("candidate_name") or "Candidate").strip()
+    target_role = (data.get("target_role") or "Software Engineer").strip()
+    cv_id = data.get("cv_id")
+    raw_questions = data.get("questions") or []
+
+    if not raw_questions:
+        default_analysis = analyze_cv_algorithm("Python SQL Docker REST API", "Python AWS", candidate_name)
+        raw_questions = default_analysis.get("likely_interview_questions", [])
+
+    total_questions = len(raw_questions)
+    user = get_current_user()
+    user_id = user["id"] if user else None
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Check if session already exists
+    cursor.execute("SELECT session_id, current_question_index FROM interview_sessions WHERE session_id = ?", (session_id,))
+    existing = cursor.fetchone()
+
+    if not existing:
+        cursor.execute("""
+        INSERT INTO interview_sessions (session_id, user_id, cv_id, candidate_name, target_role, status, total_questions, current_question_index, questions_json)
+        VALUES (?, ?, ?, ?, ?, 'in_progress', ?, 0, ?)
+        """, (session_id, user_id, cv_id, candidate_name, target_role, total_questions, json.dumps(raw_questions)))
+
+    first_q = raw_questions[0].get("question", "Tell me about your technical background.") if raw_questions else "Tell me about your technical background."
+    welcome_content = f"👋 Welcome {candidate_name}! I'm your AI Interviewer for **{target_role}**.\n\nLet's begin with Question 1:\n\n**{first_q}**"
+
+    cursor.execute("SELECT id FROM interview_messages WHERE session_id = ? AND role = 'assistant' AND question_index = 0", (session_id,))
+    if not cursor.fetchone():
+        cursor.execute("""
+        INSERT INTO interview_messages (session_id, role, question_index, content, feedback_json)
+        VALUES (?, 'assistant', 0, ?, ?)
+        """, (session_id, welcome_content, json.dumps({"action": "original_question", "is_follow_up": False, "question_index": 0})))
+
+    conn.commit()
+
+    return jsonify({
+        "success": True,
+        "session_id": session_id,
+        "current_question_index": 0,
+        "follow_up_count": 0,
+        "total_questions": total_questions,
+        "message": welcome_content
+    })
+
+
+@app.route("/api/interview/message", methods=["POST"])
+def interview_message():
+    data = request.json or {}
+    session_id = (data.get("session_id") or "").strip()
+    candidate_answer = (data.get("answer") or "").strip()
+    cv_text = str(data.get("cv_text") or "")
+    job_req = str(data.get("job_requirements") or "")
+    custom_max_follow_ups = data.get("max_follow_ups")
+
+    if not session_id:
+        return jsonify({"error": "session_id is required."}), 400
+    if not candidate_answer:
+        return jsonify({"error": "answer cannot be empty."}), 400
+
+    max_follow_ups = int(custom_max_follow_ups) if custom_max_follow_ups is not None else get_max_follow_ups()
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM interview_sessions WHERE session_id = ?", (session_id,))
+    session_row = cursor.fetchone()
+
+    user = get_current_user()
+    user_id = user["id"] if user else None
+
+    if not session_row:
+        cand_name = user.get("full_name") if user else "Candidate"
+        default_analysis = analyze_cv_algorithm(cv_text or "Python SQL", job_req or "Python AWS", cand_name)
+        questions = default_analysis.get("likely_interview_questions", [])
+        cursor.execute("""
+        INSERT INTO interview_sessions (session_id, user_id, candidate_name, target_role, status, total_questions, current_question_index, questions_json)
+        VALUES (?, ?, ?, 'Software Engineer', 'in_progress', ?, 0, ?)
+        """, (session_id, user_id, cand_name, len(questions), json.dumps(questions)))
+        conn.commit()
+        cursor.execute("SELECT * FROM interview_sessions WHERE session_id = ?", (session_id,))
+        session_row = cursor.fetchone()
+
+    session_dict = dict(session_row) if session_row else {}
+    current_q_index = session_dict.get("current_question_index") or 0
+    raw_questions_json = session_dict.get("questions_json") or "[]"
+    try:
+        questions = json.loads(raw_questions_json)
+    except Exception:
+        questions = []
+
+    if not questions:
+        questions = analyze_cv_algorithm(cv_text or "Python SQL", job_req or "Python AWS", "Candidate").get("likely_interview_questions", [])
+
+    total_questions = len(questions)
+    current_q_index = min(current_q_index, max(0, total_questions - 1))
+    current_q_obj = questions[current_q_index] if current_q_index < len(questions) else {"question": "Describe your technical background.", "category": "Technical"}
+
+    # Fetch previous messages for this session
+    cursor.execute("SELECT * FROM interview_messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    messages_rows = cursor.fetchall()
+    conversation_history = [dict(m) for m in messages_rows]
+
+    # Calculate current follow-up count for current_q_index
+    current_q_follow_ups = 0
+    for m in conversation_history:
+        if m.get("role") == "assistant" and m.get("question_index") == current_q_index:
+            fb = m.get("feedback_json") or "{}"
+            try:
+                fb_data = json.loads(fb) if isinstance(fb, str) else fb
+                if fb_data.get("is_follow_up"):
+                    current_q_follow_ups += 1
+            except Exception:
+                if "follow-up question" in (m.get("content") or "").lower():
+                    current_q_follow_ups += 1
+
+    # 1. Save candidate's answer into interview_messages
+    cursor.execute("""
+    INSERT INTO interview_messages (session_id, role, question_index, content)
+    VALUES (?, 'user', ?, ?)
+    """, (session_id, current_q_index, candidate_answer))
+    conn.commit()
+
+    conversation_history.append({"role": "user", "question_index": current_q_index, "content": candidate_answer})
+
+    # 2. Run adaptive follow-up analysis
+    candidate_skills = extract_skills_from_text(cv_text) if cv_text else []
+    required_skills = extract_skills_from_text(job_req) if job_req else []
+
+    eval_result = analyze_interview_response(
+        original_question=current_q_obj.get("question", ""),
+        original_question_category=current_q_obj.get("category", "Technical"),
+        candidate_answer=candidate_answer,
+        conversation_history=conversation_history,
+        follow_up_count=current_q_follow_ups,
+        max_follow_ups=max_follow_ups,
+        candidate_skills=candidate_skills,
+        required_skills=required_skills,
+        target_role=session_dict.get("target_role") or "Software Engineer",
+        cv_text=cv_text,
+        job_requirements=job_req
+    )
+
+    action = eval_result["action"]
+    reasoning = eval_result.get("reasoning", "")
+
+    if action == "follow_up":
+        new_follow_up_count = current_q_follow_ups + 1
+        fq_text = eval_result["follow_up_question"]
+        ai_message = f"🔍 **Follow-up Question:**\n\n{fq_text}"
+
+        cursor.execute("""
+        INSERT INTO interview_messages (session_id, role, question_index, content, feedback_json)
+        VALUES (?, 'assistant', ?, ?, ?)
+        """, (session_id, current_q_index, ai_message, json.dumps({
+            "action": "follow_up",
+            "is_follow_up": True,
+            "follow_up_count": new_follow_up_count,
+            "reasoning": reasoning
+        })))
+        conn.commit()
+
+        return jsonify({
+            "success": True,
+            "action": "follow_up",
+            "is_follow_up": True,
+            "follow_up_count": new_follow_up_count,
+            "max_follow_ups": max_follow_ups,
+            "current_question_index": current_q_index,
+            "total_questions": total_questions,
+            "ai_message": ai_message,
+            "status": "in_progress"
+        })
+
+    elif action == "next_question":
+        next_q_index = current_q_index + 1
+        trans_prefix = eval_result.get("transition_prefix") or "Thank you for sharing those insights. Let's move on to the next question."
+
+        if next_q_index < total_questions:
+            next_q = questions[next_q_index]
+            next_q_num = next_q_index + 1
+            next_q_cat = next_q.get("category", "Interview")
+            next_q_text = next_q.get("question", "")
+            ai_message = f"{trans_prefix}\n\n**Question {next_q_num} ({next_q_cat}):**\n\n{next_q_text}"
+
+            cursor.execute("UPDATE interview_sessions SET current_question_index = ? WHERE session_id = ?", (next_q_index, session_id))
+            cursor.execute("""
+            INSERT INTO interview_messages (session_id, role, question_index, content, feedback_json)
+            VALUES (?, 'assistant', ?, ?, ?)
+            """, (session_id, next_q_index, ai_message, json.dumps({
+                "action": "next_question",
+                "is_follow_up": False,
+                "follow_up_count": 0,
+                "reasoning": reasoning
+            })))
+            conn.commit()
+
+            return jsonify({
+                "success": True,
+                "action": "next_question",
+                "is_follow_up": False,
+                "follow_up_count": 0,
+                "max_follow_ups": max_follow_ups,
+                "current_question_index": next_q_index,
+                "total_questions": total_questions,
+                "ai_message": ai_message,
+                "status": "in_progress"
+            })
+        else:
+            # Interview Completed!
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            target_role = session_dict.get("target_role") or "Target Role"
+            ai_message = (
+                f"🎉 **Interview Completed!**\n\n"
+                f"Thank you for completing this technical mock interview for **{target_role}**. "
+                f"You have answered all {total_questions} questions and follow-ups with thoughtful technical rigor.\n\n"
+                f"Your complete interview transcript has been saved to your account history."
+            )
+            cursor.execute("UPDATE interview_sessions SET status = 'completed', completed_at = ? WHERE session_id = ?", (now_str, session_id))
+            cursor.execute("""
+            INSERT INTO interview_messages (session_id, role, question_index, content, feedback_json)
+            VALUES (?, 'assistant', ?, ?, ?)
+            """, (session_id, current_q_index, ai_message, json.dumps({
+                "action": "completed",
+                "is_follow_up": False,
+                "follow_up_count": 0,
+                "reasoning": "All questions completed"
+            })))
+            conn.commit()
+
+            return jsonify({
+                "success": True,
+                "action": "completed",
+                "is_follow_up": False,
+                "follow_up_count": 0,
+                "max_follow_ups": max_follow_ups,
+                "current_question_index": current_q_index,
+                "total_questions": total_questions,
+                "ai_message": ai_message,
+                "status": "completed"
+            })
+
+
+@app.route("/api/interview/session/<session_id>", methods=["GET"])
+def get_interview_session_details(session_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM interview_sessions WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Interview session not found."}), 404
+
+    session_data = dict(row)
+    user = get_current_user()
+    if user and not user.get("is_admin") and session_data.get("user_id") and session_data.get("user_id") != user.get("id"):
+        return jsonify({"error": "Forbidden: Access denied to this session."}), 403
+
+    cursor.execute("SELECT * FROM interview_messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    messages = [dict(m) for m in cursor.fetchall()]
+
+    curr_idx = session_data.get("current_question_index") or 0
+    follow_up_cnt = 0
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("question_index") == curr_idx:
+            try:
+                fb = json.loads(m.get("feedback_json") or "{}")
+                if fb.get("is_follow_up"):
+                    follow_up_cnt += 1
+            except Exception:
+                if "follow-up question" in (m.get("content") or "").lower():
+                    follow_up_cnt += 1
+
+    return jsonify({
+        "success": True,
+        "session": session_data,
+        "messages": messages,
+        "current_question_index": curr_idx,
+        "follow_up_count": follow_up_cnt,
+        "total_questions": session_data.get("total_questions") or 5
+    })
+
+
+@app.route("/api/interview/session/<session_id>/transcript", methods=["GET"])
+def get_interview_session_transcript(session_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM interview_sessions WHERE session_id = ?", (session_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Interview session not found."}), 404
+
+    session_data = dict(row)
+    user = get_current_user()
+    if user and not user.get("is_admin") and session_data.get("user_id") and session_data.get("user_id") != user.get("id"):
+        return jsonify({"error": "Forbidden: Access denied to this session."}), 403
+
+    cursor.execute("SELECT * FROM interview_messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    messages = [dict(m) for m in cursor.fetchall()]
+
+    return jsonify({
+        "success": True,
+        "session_id": session_id,
+        "candidate_name": session_data.get("candidate_name") or "Candidate",
+        "target_role": session_data.get("target_role") or "Target Role",
+        "status": session_data.get("status") or "in_progress",
+        "created_at": str(session_data.get("created_at") or ""),
+        "completed_at": str(session_data.get("completed_at") or ""),
+        "messages": messages
+    })
 
 # -----------------------------
 # Detailed Admin Dashboard Endpoints
